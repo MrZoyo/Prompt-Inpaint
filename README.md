@@ -159,6 +159,19 @@ Summary:
 ==================================================
 ```
 
+### 示例结果（test4）
+
+以下结果来自 `outputs/test4`，图片已拷贝到 `assets/` 便于展示。
+
+原图：
+![test4 input](assets/test4_input.png)
+
+合并 mask：
+![test4 combined mask](assets/test4_combined_mask.png)
+
+清理后的背景：
+![test4 clean background](assets/test4_clean_background.png)
+
 ## CLI 参数
 
 | 参数 | 类型 | 默认值 | 说明 |
