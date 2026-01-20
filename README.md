@@ -1,4 +1,4 @@
-# Grounded Segment Inpaint
+# Prompt-Inpaint
 
 基于文本提示自动检测、分割并移除图像中的物体，生成干净的背景图像。
 
