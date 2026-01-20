@@ -19,6 +19,7 @@ prompts:
   - "fork"
   - "spatula"
   - "bottle"
+  - "can"
 
   # ========== Food Items (食物) ==========
   - "bread"
@@ -41,16 +42,17 @@ prompts:
   - "sponge"
 
   # ========== Office & Tools (办公/工具) ==========
-  - "pen"
-  - "pencil"
-  - "book"
-  - "phone"
-  - "keyboard"
-  - "computer mouse"
+  # - "pen"
+  # - "pencil"
+  # - "book"
+  # - "phone"
+  # - "keyboard"
+  # - "computer mouse"
 
   # ========== Others (其他物品) ==========
-  - "toy"
-  - "cube"
+  - "plush toy"
+  - "toy bricks"
+
 
 settings:
   # Grounding DINO detection thresholds
