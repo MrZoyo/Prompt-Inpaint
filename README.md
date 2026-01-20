@@ -15,6 +15,7 @@
 - [CLI 参数](#cli-参数)
 - [配置文件](#配置文件)
 - [Pipeline 流程](#pipeline-流程)
+- [批处理脚本](#批处理脚本)
 - [模型选择](#模型选择)
 - [常见问题](#常见问题)
 
@@ -149,8 +150,10 @@ python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 | `--text-threshold` | float | `0.25` | 文本匹配阈值 |
 | `--iou-threshold` | float | `0.5` | Mask 去重 IoU 阈值 |
 | `--inpaint-backend` | str | `iopaint` | 补全后端: `iopaint`/`opencv`/`none` |
+| `--mask-dilate-pixels` | int | `12` | Mask 膨胀像素数（用于补全） |
 | `--no-inpaint` | flag | - | 跳过背景补全 |
 | `--save-debug` | flag | - | 保存调试产物 |
+| `--save-individual-masks` | flag | - | 将所有物体的 RGB mask 保存到单独的 `masks/` 文件夹 |
 | `--resize-output` | str | 关闭 | 强制缩放所有输出图片；不带值时默认 `448x448` |
 
 **注意：**
@@ -216,8 +219,9 @@ settings:
   # 调试
   save_debug: false
 
-  # 输出尺寸（可选），格式：[宽, 高]
-  output_size: [448, 448]
+  # 输出选项
+  save_individual_masks: false   # 是否保存单独的 RGB masks 到 masks/ 文件夹
+  output_size: [448, 448]        # 输出尺寸（可选），格式：[宽, 高]
 
   # 设备
   device: cuda
@@ -275,6 +279,69 @@ settings:
 - 移除机械臂后：重新检测发现毛巾的完整形状
 - 扩展：毛巾 mask 被补全
 - 最终：毛巾被完全移除，无残留
+
+## 批处理脚本
+
+对于 Bridge V2 等数据集，可以使用批处理脚本一次性处理多个子数据集。
+
+### 使用方法
+
+```bash
+# 基本用法
+python scripts/batch_process_datasets.py \
+    --input-root /path/to/traj_group0 \
+    --output-dir ./batch_outputs \
+    --config configs/items.yml
+
+# 带 resize 和 individual masks
+python scripts/batch_process_datasets.py \
+    --input-root /path/to/traj_group0 \
+    --output-dir ./batch_outputs \
+    --config configs/items.yml \
+    --resize-output 448x448 \
+    --save-individual-masks
+
+# 跳过补全加速处理
+python scripts/batch_process_datasets.py \
+    --input-root /path/to/traj_group0 \
+    --output-dir ./batch_outputs \
+    --no-inpaint \
+    --save-individual-masks
+```
+
+### 批处理参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--input-root` | str | **必填** | 包含子数据集的根目录 |
+| `--output-dir` | str | **必填** | 输出目录 |
+| `--config`, `-c` | str | `configs/items.yml` | 配置文件路径 |
+| `--resize-output` | str | 关闭 | 调整输出尺寸 |
+| `--save-individual-masks` | flag | - | 保存单独的 RGB masks |
+| `--no-inpaint` | flag | - | 跳过背景补全 |
+| `--save-debug` | flag | - | 保存调试产物 |
+| `--overwrite` | flag | - | 覆盖已存在的结果 |
+| `--device` | str | `cuda` | 运行设备 |
+
+### 输出结构
+
+```
+batch_outputs/
+├── dataset_001/
+│   ├── input_image.png
+│   ├── combined_mask.png
+│   ├── clean_background.png
+│   ├── report.json
+│   ├── objects/
+│   └── masks/              # 如果启用 --save-individual-masks
+├── dataset_002/
+└── ...
+```
+
+**特点：**
+- 模型只加载一次，批量处理时复用
+- 自动跳过已处理的数据集（除非使用 `--overwrite`）
+- 对每个子数据集中的第一张图片进行处理
 
 ## 模型选择
 
