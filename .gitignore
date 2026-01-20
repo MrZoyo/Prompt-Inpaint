@@ -11,5 +11,7 @@ outputs/*
 checkpoints/*
 !checkpoints/.gitkeep
 
+!/batch_outputs/
+
 # Agent notes (local only)
 AGENT.MD

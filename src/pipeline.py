@@ -161,6 +161,8 @@ class SegmentInpaintPipeline:
         print(f"Loading image: {image_path}")
         image = Image.open(image_path).convert("RGB")
         image_np = np.array(image)
+        image_area = image_np.shape[0] * image_np.shape[1]
+        max_mask_area = int(image_area * 0.2)
 
         # Save input image
         input_copy = output_path / "input_image.png"
@@ -198,10 +200,33 @@ class SegmentInpaintPipeline:
         objects = self.segment_detections(image_np, detections)
         print(f"Segmented {len(objects)} objects")
 
+        # Filter oversized masks before deduplication
+        if objects:
+            before = len(objects)
+            objects = [obj for obj in objects if obj.area <= max_mask_area]
+            dropped = before - len(objects)
+            if dropped:
+                print(f"Filtered {dropped} oversized masks (>20% image area)")
+
         # Step 3: Deduplicate
         print(f"Deduplicating with IoU threshold {self.config.iou_threshold}...")
-        objects = deduplicate_objects(objects, self.config.iou_threshold)
+        objects = deduplicate_objects(
+            objects,
+            self.config.iou_threshold,
+            self.config.containment_overlap_ratio,
+            self.config.contour_overlap_ratio,
+        )
         print(f"After deduplication: {len(objects)} unique objects")
+
+        # Filter oversized masks after deduplication
+        if objects:
+            before = len(objects)
+            objects = [obj for obj in objects if obj.area <= max_mask_area]
+            dropped = before - len(objects)
+            if dropped:
+                print(f"Filtered {dropped} oversized masks after dedup (>20% image area)")
+            for i, obj in enumerate(objects):
+                obj.id = i
 
         # Step 4: Save individual objects
         print("Saving individual objects...")
@@ -229,6 +254,33 @@ class SegmentInpaintPipeline:
             }
             with open(obj_dir / "info.json", "w") as f:
                 json.dump(info, f, indent=2)
+
+        # Step 4.5: Save individual RGB masks to a separate folder (if enabled)
+        masks_dir = None
+        if self.config.save_individual_masks and objects:
+            print("Saving individual RGB masks...")
+            masks_dir = output_path / "masks"
+            masks_dir.mkdir(exist_ok=True)
+
+            # Track used names to handle duplicates
+            name_counts = {}
+            for obj in objects:
+                # Use first label as filename
+                base_name = obj.labels[0].replace(" ", "_").replace("/", "-")
+
+                # Handle duplicate names by adding suffix
+                if base_name in name_counts:
+                    name_counts[base_name] += 1
+                    filename = f"{base_name}_{name_counts[base_name]}.png"
+                else:
+                    name_counts[base_name] = 0
+                    filename = f"{base_name}.png"
+
+                # Save RGB mask
+                rgb_mask = mask_to_rgb(image_np, obj.mask)
+                self._save_image(rgb_mask, masks_dir / filename)
+
+            print(f"  Saved {len(objects)} RGB masks to: {masks_dir}")
 
         # Step 5: Combine masks (original precise masks for reference)
         combined_mask = combine_all_masks(objects)
@@ -406,6 +458,7 @@ class SegmentInpaintPipeline:
             "num_detections": len(detections),
             "num_objects": len(objects),
             "objects_dir": str(objects_dir),
+            "masks_dir": str(masks_dir) if masks_dir else None,
             "objects": [
                 {
                     "id": obj.id,
@@ -426,6 +479,7 @@ class SegmentInpaintPipeline:
                 "iou_threshold": self.config.iou_threshold,
                 "inpaint_backend": self.config.inpaint_backend,
                 "save_debug": self.config.save_debug,
+                "save_individual_masks": self.config.save_individual_masks,
             },
         }
         with open(output_path / "report.json", "w") as f:

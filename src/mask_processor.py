@@ -50,6 +50,60 @@ def compute_overlap_ratio(mask1: np.ndarray, mask2: np.ndarray) -> Tuple[float, 
     return ratio1, ratio2
 
 
+def mask_boundary(mask: np.ndarray) -> np.ndarray:
+    """Return a 1-pixel boundary mask."""
+    mask_bool = mask.astype(bool) if mask.dtype != bool else mask
+    if not mask_bool.any():
+        return mask_bool
+    mask_u8 = (mask_bool.astype(np.uint8) * 255)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    eroded = cv2.erode(mask_u8, kernel, iterations=1)
+    boundary = cv2.bitwise_xor(mask_u8, eroded)
+    return boundary > 0
+
+
+def contour_overlap_ratio(mask1: np.ndarray, mask2: np.ndarray) -> float:
+    """
+    Compute overlap ratio of two mask boundaries.
+
+    Uses overlap / min(boundary_pixels) to be conservative.
+    """
+    boundary1 = mask_boundary(mask1)
+    boundary2 = mask_boundary(mask2)
+    denom = min(boundary1.sum(), boundary2.sum())
+    if denom == 0:
+        return 0.0
+    overlap = np.logical_and(boundary1, boundary2).sum()
+    return float(overlap / denom)
+
+
+def is_contained_split(
+    mask_a: np.ndarray,
+    mask_b: np.ndarray,
+    overlap_ratio_thresh: float,
+    contour_overlap_thresh: float,
+) -> bool:
+    """Detect likely split masks via containment + contour overlap."""
+    area_a = mask_a.sum()
+    area_b = mask_b.sum()
+    if area_a == 0 or area_b == 0:
+        return False
+
+    if area_a <= area_b:
+        small, large = mask_a, mask_b
+        small_area = area_a
+    else:
+        small, large = mask_b, mask_a
+        small_area = area_b
+
+    overlap_ratio = np.logical_and(small, large).sum() / small_area
+    if overlap_ratio < overlap_ratio_thresh:
+        return False
+
+    contour_ratio = contour_overlap_ratio(small, large)
+    return contour_ratio >= contour_overlap_thresh
+
+
 def merge_masks(mask1: np.ndarray, mask2: np.ndarray) -> np.ndarray:
     """Merge two masks using logical OR."""
     return np.logical_or(mask1, mask2)
@@ -58,12 +112,16 @@ def merge_masks(mask1: np.ndarray, mask2: np.ndarray) -> np.ndarray:
 def deduplicate_objects(
     objects: List[SegmentedObject],
     iou_threshold: float = 0.5,
+    containment_overlap_ratio: float = 0.9,
+    contour_overlap_ratio: float = 0.3,
 ) -> List[SegmentedObject]:
     """
     Deduplicate objects by merging those with high IoU.
 
     Objects with IoU above threshold are considered the same object
     (e.g., "red cup" and "coffee mug" pointing to the same thing).
+    Also merges when a smaller mask is mostly contained within a larger one
+    and their contours overlap significantly (likely split).
 
     Args:
         objects: List of segmented objects
@@ -88,15 +146,24 @@ def deduplicate_objects(
         # Find all objects that should be merged with this one
         to_merge = [obj_i]
         merge_labels = list(obj_i.labels)
+        merge_scores = [obj_i.score]
+        merged_mask = obj_i.mask
 
         for j, obj_j in enumerate(sorted_objects[i + 1 :], start=i + 1):
             if j in merged_indices:
                 continue
 
-            iou = compute_iou(obj_i.mask, obj_j.mask)
-            if iou >= iou_threshold:
+            iou = compute_iou(merged_mask, obj_j.mask)
+            if iou >= iou_threshold or is_contained_split(
+                merged_mask,
+                obj_j.mask,
+                overlap_ratio_thresh=containment_overlap_ratio,
+                contour_overlap_thresh=contour_overlap_ratio,
+            ):
                 to_merge.append(obj_j)
                 merge_labels.extend(obj_j.labels)
+                merge_scores.append(obj_j.score)
+                merged_mask = merge_masks(merged_mask, obj_j.mask)
                 merged_indices.add(j)
 
         # Create merged object
@@ -104,10 +171,6 @@ def deduplicate_objects(
             kept.append(obj_i)
         else:
             # Merge masks
-            merged_mask = to_merge[0].mask
-            for obj in to_merge[1:]:
-                merged_mask = merge_masks(merged_mask, obj.mask)
-
             # Compute new bbox from merged mask
             rows = np.any(merged_mask, axis=1)
             cols = np.any(merged_mask, axis=0)
@@ -115,7 +178,7 @@ def deduplicate_objects(
             x1, x2 = np.where(cols)[0][[0, -1]]
 
             # Average score, keep highest
-            avg_score = max(obj.score for obj in to_merge)
+            avg_score = max(merge_scores)
 
             # Remove duplicate labels
             unique_labels = list(dict.fromkeys(merge_labels))

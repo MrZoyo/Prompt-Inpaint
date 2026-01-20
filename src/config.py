@@ -21,6 +21,8 @@ class SegmentConfig:
     # Mask processing
     iou_threshold: float = 0.5  # For deduplication
     mask_dilate_pixels: int = 12  # Mask dilation for inpainting
+    containment_overlap_ratio: float = 0.9  # Containment merge threshold
+    contour_overlap_ratio: float = 0.3  # Contour overlap merge threshold
 
     # SAM model selection
     # Options: "sam2_hiera_tiny", "sam2_hiera_small", "sam2_hiera_base_plus", "sam2_hiera_large"
@@ -35,6 +37,9 @@ class SegmentConfig:
     inpaint_backend: str = "iopaint"  # "iopaint", "opencv", "none"
     save_debug: bool = False
     output_size: Optional[Tuple[int, int]] = None  # (width, height)
+
+    # Output options
+    save_individual_masks: bool = False  # Save all RGB masks to a separate folder
 
     # Device
     device: str = "cuda"
@@ -54,11 +59,14 @@ class SegmentConfig:
             text_threshold=settings.get("text_threshold", 0.25),
             iou_threshold=settings.get("iou_threshold", 0.5),
             mask_dilate_pixels=settings.get("mask_dilate_pixels", 12),
+            containment_overlap_ratio=settings.get("containment_overlap_ratio", 0.9),
+            contour_overlap_ratio=settings.get("contour_overlap_ratio", 0.3),
             sam_model=settings.get("sam_model", "sam2_hiera_small"),
             grounding_dino_model=settings.get("grounding_dino_model", "grounding-dino-tiny"),
             inpaint_backend=settings.get("inpaint_backend", "iopaint"),
             save_debug=settings.get("save_debug", False),
             output_size=parse_output_size(settings.get("output_size")),
+            save_individual_masks=settings.get("save_individual_masks", False),
             device=settings.get("device", "cuda"),
         )
 
@@ -71,9 +79,12 @@ class SegmentConfig:
                 "text_threshold": self.text_threshold,
                 "iou_threshold": self.iou_threshold,
                 "mask_dilate_pixels": self.mask_dilate_pixels,
+                "containment_overlap_ratio": self.containment_overlap_ratio,
+                "contour_overlap_ratio": self.contour_overlap_ratio,
                 "sam_model": self.sam_model,
                 "inpaint_backend": self.inpaint_backend,
                 "save_debug": self.save_debug,
+                "save_individual_masks": self.save_individual_masks,
                 "device": self.device,
             },
         }

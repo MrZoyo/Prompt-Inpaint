@@ -14,7 +14,6 @@
 - [快速开始](#快速开始)
 - [CLI 参数](#cli-参数)
 - [配置文件](#配置文件)
-- [输出结构](#输出结构)
 - [Pipeline 流程](#pipeline-流程)
 - [模型选择](#模型选择)
 - [常见问题](#常见问题)
@@ -114,63 +113,26 @@ python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 
 **配置说明：** 不指定 `--config` 时不会自动加载 `configs/items.yml`，需要通过 `--prompts` 提供检测提示词。
 
-### 示例输出
-
-```
-==================================================
-Configuration:
-  Image: photo.jpg
-  Output: outputs/20240119_223000
-  DINO Model: grounding-dino-tiny
-  SAM Model: sam2_hiera_small
-  Prompts: ['robot arm', 'pot', 'knife', 'towel']
-  Box Threshold: 0.3
-  Text Threshold: 0.3
-  IoU Threshold: 0.5
-  Inpaint: iopaint
-  Save Debug: False
-==================================================
-Detecting objects...
-  'robot arm': found 1 objects
-  'pot': found 1 objects
-  'knife': found 1 objects
-  'towel': found 1 objects
-Total detections: 4
-Segmenting objects with SAM...
-Segmented 4 objects
-Deduplicating with IoU threshold 0.5...
-After deduplication: 4 unique objects
-Inpainting background with iopaint...
-  Iterative inpaint + re-detection for 4 objects...
-    [1/4] Checking expansion after removing 'robot arm'...
-        Expanding 'towel': +1500 pixels
-    ...
-Background inpainting complete.
-
-==================================================
-Summary:
-  Detections: 4
-  Unique Objects: 4
-    - ['robot arm'] (area: 23862, score: 0.496)
-    - ['pot'] (area: 13457, score: 0.440)
-    - ['knife'] (area: 3423, score: 0.603)
-    - ['towel'] (area: 10638, score: 0.571)
-  Output Directory: outputs/20240119_223000
-==================================================
-```
-
-### 示例结果（test4）
-
-以下结果来自 `outputs/test4`，图片已拷贝到 `assets/` 便于展示。
+### 示例结果（Sample）
 
 原图：
-![test4 input](assets/test4_input.png)
+
+![sample input](assets/sample_input.png)
 
 合并 mask：
-![test4 combined mask](assets/test4_combined_mask.png)
+
+![sample combined mask](assets/sample_combined_mask.png)
 
 清理后的背景：
-![test4 clean background](assets/test4_clean_background.png)
+
+![sample clean background](assets/sample_clean_background.png)
+
+分离出的物体（RGB mask）：
+
+| | | |
+| --- | --- | --- |
+| cucumber<br>![cucumber](assets/cucumber_rgb.png) | banana<br>![banana](assets/banana_rgb.png) | corn<br>![corn](assets/corn_rgb.png) |
+| sponge<br>![sponge](assets/sponge_rgb.png) | gripper<br>![gripper](assets/gripper_rgb.png) | computer mouse<br>![computer mouse](assets/computer_mouse_rgb.png) |
 
 ## CLI 参数
 
@@ -237,6 +199,12 @@ settings:
   # Mask 去重阈值
   iou_threshold: 0.5
 
+  # 小 mask 包含合并阈值（覆盖比例）
+  containment_overlap_ratio: 0.9
+
+  # 轮廓重合阈值（用于区分错误拆分）
+  contour_overlap_ratio: 0.3
+
   # 模型选择
   sam_model: sam2_hiera_small          # 或 vit_h (SAM1)
   grounding_dino_model: grounding-dino-tiny  # 或 grounding-dino-base
@@ -257,40 +225,8 @@ settings:
 
 补充说明：
 - `output_size` 不设置则保持原始尺寸；设置后所有保存的图片都会被强制缩放。
+- 去重规则：IoU 超阈值直接合并；若小 mask 覆盖比例 > `containment_overlap_ratio` 且轮廓重合 > `contour_overlap_ratio`，也会合并。
 
-### Prompt 顺序的重要性
-
-**将常遮挡其他物体的 prompt 放在前面**（如 `robot arm`）。
-
-原因：Pipeline 按顺序处理物体，先移除的物体会暴露被遮挡的区域，使得后续物体的 mask 能够被正确扩展。
-
-## 输出结构
-
-```
-outputs/<timestamp>/
-├── input_image.png          # 输入图像副本
-├── detections.json          # 所有检测结果
-├── combined_mask.png        # 合并的二值 mask
-├── clean_background.png     # 移除物体后的干净背景
-├── report.json              # 处理报告
-├── objects/                 # 各物体的单独输出
-│   ├── 000_robot_arm/
-│   │   ├── mask.png         # 二值 mask（白色物体，黑色背景）
-│   │   ├── mask_rgb.png     # RGB mask（原图颜色，黑色背景）
-│   │   └── info.json        # 物体信息
-│   ├── 001_pot/
-│   │   └── ...
-│   └── ...
-└── debug/                   # 仅在 save_debug=true 时生成
-    ├── step_01_remove_robot_arm/
-    │   ├── removed_mask.png
-    │   ├── removed_mask_rgb.png
-    │   ├── inpainted.png    # 移除该物体后的图像
-    │   └── redetected/      # 重新检测到的 masks
-    ├── step_02_remove_pot/
-    │   └── ...
-    └── final_expanded_masks/  # 最终扩展后的 masks
-```
 
 ## Pipeline 流程
 
@@ -301,28 +237,28 @@ outputs/<timestamp>/
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 1: 初始检测                                                │
-│  - Grounding DINO 根据每个 prompt 检测物体                       │
-│  - SAM 为每个检测框生成精确 mask                                 │
-│  - 根据 IoU 去重（合并重叠的 mask）                              │
+│  Step 1: 初始检测                                                 │
+│  - Grounding DINO 根据每个 prompt 检测物体                         │
+│  - SAM 为每个检测框生成精确 mask                                    │
+│  - 根据 IoU 去重（合并重叠的 mask）                                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 2: 迭代式 Mask 扩展                                        │
+│  Step 2: 迭代式 Mask 扩展                                         │
 │  对于每个物体：                                                   │
-│  1. 从当前图像移除该物体（膨胀 mask + inpaint）                  │
-│  2. 在移除后的图像上重新检测（只检测已知标签）                   │
-│  3. 如果检测到的 mask 与其他物体的原 mask 相邻且同类型：         │
-│     → 扩展该物体的 mask（限制：不超过原面积的 3 倍）             │
-│  4. 更新当前图像，处理下一个物体                                 │
+│  1. 从当前图像移除该物体（膨胀 mask + inpaint）                      │
+│  2. 在移除后的图像上重新检测（只检测已知标签）                          │
+│  3. 如果检测到的 mask 与其他物体的原 mask 相邻且同类型：               │
+│     → 扩展该物体的 mask（限制：不超过原面积的 3 倍）                   │
+│  4. 更新当前图像，处理下一个物体                                     │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 3: 最终补全                                                │
-│  - 使用扩展后的 masks 顺序补全背景                               │
-│  - 输出干净的背景图像                                            │
+│  - 使用扩展后的 masks 顺序补全背景                                  │
+│  - 输出干净的背景图像                                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

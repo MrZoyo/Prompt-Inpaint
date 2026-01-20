@@ -126,6 +126,11 @@ SAM Models:
         help="Save debug artifacts under outputs/<timestamp>/debug",
     )
     parser.add_argument(
+        "--save-individual-masks",
+        action="store_true",
+        help="Save all object RGB masks to a separate 'masks' folder with object names",
+    )
+    parser.add_argument(
         "--resize-output",
         nargs="?",
         const="448x448",
@@ -185,6 +190,8 @@ def main():
         config.inpaint_backend = args.inpaint_backend
     if args.save_debug:
         config.save_debug = True
+    if args.save_individual_masks:
+        config.save_individual_masks = True
     if args.resize_output is not None:
         try:
             config.output_size = parse_output_size(args.resize_output)
@@ -217,6 +224,7 @@ def main():
     print(f"  IoU Threshold: {config.iou_threshold}")
     print(f"  Inpaint: {config.inpaint_backend}")
     print(f"  Save Debug: {config.save_debug}")
+    print(f"  Save Individual Masks: {config.save_individual_masks}")
     if config.output_size:
         print(f"  Output Resize: {config.output_size[0]}x{config.output_size[1]}")
     print("=" * 50)

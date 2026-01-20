@@ -32,10 +32,11 @@ prompts:
   - "corn"
   - "egg"
   - "fries"
+  - "cucumber"
+  - "eggplant"
 
   # ========== Cleaning & Fabric (清洁/布料) ==========
   - "rag"
-  - "cloth"
   - "towel"
   - "sponge"
 
@@ -49,15 +50,21 @@ prompts:
 
   # ========== Others (其他物品) ==========
   - "toy"
+  - "cube"
 
 settings:
   # Grounding DINO detection thresholds
-  box_threshold: 0.30
-  text_threshold: 0.30
+  box_threshold: 0.35
+  text_threshold: 0.35
 
   # Mask deduplication threshold
   # Objects with IoU above this value are considered the same object
   iou_threshold: 0.5
+
+  # Containment merge (split correction)
+  # If small mask overlap ratio > 0.9 and contour overlap > 0.3, merge them
+  containment_overlap_ratio: 0.9
+  contour_overlap_ratio: 0.3
 
   # SAM model selection
   # SAM2: sam2_hiera_tiny, sam2_hiera_small, sam2_hiera_base_plus, sam2_hiera_large

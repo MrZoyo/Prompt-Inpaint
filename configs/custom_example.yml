@@ -62,6 +62,20 @@ settings:
   # - 推荐: 0.5
   iou_threshold: 0.5
 
+  # 小 mask 包含合并阈值 (0.0 - 1.0)
+  # Containment overlap ratio for split correction
+  # - small_mask 与 large_mask 的覆盖比例超过该值才考虑合并
+  # - Merge only if small_mask overlap ratio exceeds this value
+  # - 推荐: 0.9
+  containment_overlap_ratio: 0.9
+
+  # 轮廓重合阈值 (0.0 - 1.0)
+  # Contour overlap ratio for split correction
+  # - 覆盖比例满足后，轮廓重合超过该值才合并
+  # - If containment passes, contour overlap must exceed this value
+  # - 推荐: 0.3
+  contour_overlap_ratio: 0.3
+
   # Inpaint 时的 Mask 膨胀像素数
   # Mask dilation pixels for inpainting
   # - 膨胀可以避免物体边缘残留
