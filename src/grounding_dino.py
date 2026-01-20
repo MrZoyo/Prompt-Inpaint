@@ -1,0 +1,109 @@
+"""Grounding DINO object detection using HuggingFace transformers."""
+
+from dataclasses import dataclass
+from typing import List, Tuple
+
+import numpy as np
+import torch
+from PIL import Image
+from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+
+
+@dataclass
+class Detection:
+    """A single object detection result."""
+
+    bbox: Tuple[int, int, int, int]  # x1, y1, x2, y2
+    score: float
+    label: str
+
+
+class GroundingDINODetector:
+    """Grounding DINO detector using HuggingFace transformers."""
+
+    def __init__(self, device: str = "cuda", model_id: str = "IDEA-Research/grounding-dino-tiny"):
+        """
+        Initialize the Grounding DINO detector.
+
+        Args:
+            device: Device to run the model on ("cuda" or "cpu")
+            model_id: HuggingFace model ID. Options:
+                - "IDEA-Research/grounding-dino-tiny" (default, smaller)
+                - "IDEA-Research/grounding-dino-base"
+        """
+        self.device = device if torch.cuda.is_available() else "cpu"
+        self.model_id = model_id
+
+        print(f"Loading Grounding DINO from {model_id}...")
+        self.processor = AutoProcessor.from_pretrained(model_id)
+        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(self.device)
+        self.model.eval()
+        print("Grounding DINO loaded.")
+
+    def detect(
+        self,
+        image: Image.Image,
+        prompts: List[str],
+        box_threshold: float = 0.25,
+        text_threshold: float = 0.25,
+    ) -> List[Detection]:
+        """
+        Detect objects in an image based on text prompts.
+
+        Args:
+            image: PIL Image to process
+            prompts: List of text prompts describing objects to detect
+            box_threshold: Confidence threshold for bounding boxes
+            text_threshold: Confidence threshold for text matching
+
+        Returns:
+            List of Detection objects
+        """
+        if not prompts:
+            return []
+
+        # Combine prompts into a single text query (Grounding DINO format)
+        # Format: "prompt1. prompt2. prompt3."
+        text = ". ".join(prompts) + "."
+
+        # Process inputs
+        inputs = self.processor(images=image, text=text, return_tensors="pt").to(self.device)
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # Post-process results
+        results = self.processor.post_process_grounded_object_detection(
+            outputs,
+            inputs.input_ids,
+            box_threshold=box_threshold,
+            text_threshold=text_threshold,
+            target_sizes=[image.size[::-1]],  # (height, width)
+        )[0]
+
+        detections = []
+        boxes = results["boxes"].cpu().numpy()
+        scores = results["scores"].cpu().numpy()
+        labels = results["labels"]
+
+        for box, score, label in zip(boxes, scores, labels):
+            x1, y1, x2, y2 = box.astype(int)
+            detections.append(
+                Detection(
+                    bbox=(int(x1), int(y1), int(x2), int(y2)),
+                    score=float(score),
+                    label=label,
+                )
+            )
+
+        return detections
+
+    def detect_single_prompt(
+        self,
+        image: Image.Image,
+        prompt: str,
+        box_threshold: float = 0.25,
+        text_threshold: float = 0.25,
+    ) -> List[Detection]:
+        """Detect objects matching a single prompt."""
+        return self.detect(image, [prompt], box_threshold, text_threshold)

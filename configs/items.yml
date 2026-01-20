@@ -1,0 +1,77 @@
+# Object detection prompts for grounded segmentation
+# Organized by Bridge V2 dataset scene categories
+# Reference: https://rail-berkeley.github.io/bridgedata/
+
+prompts:
+  # ========== Robot & Equipment (机器人/设备) ==========
+  - "robot arm"
+  - "gripper"
+
+  # ========== Kitchen Utensils (厨房用具) ==========
+  - "pot"
+  - "pan"
+  - "cup"
+  - "mug"
+  - "bowl"
+  - "plate"
+  - "knife"
+  - "spoon"
+  - "fork"
+  - "spatula"
+  - "bottle"
+
+  # ========== Food Items (食物) ==========
+  - "bread"
+  - "croissant"
+  - "garlic"
+  - "onion"
+  - "apple"
+  - "banana"
+  - "carrot"
+  - "tomato"
+  - "corn"
+  - "egg"
+  - "fries"
+
+  # ========== Cleaning & Fabric (清洁/布料) ==========
+  - "rag"
+  - "cloth"
+  - "towel"
+  - "sponge"
+
+  # ========== Office & Tools (办公/工具) ==========
+  - "pen"
+  - "pencil"
+  - "book"
+  - "phone"
+  - "keyboard"
+  - "computer mouse"
+
+  # ========== Others (其他物品) ==========
+  - "toy"
+
+settings:
+  # Grounding DINO detection thresholds
+  box_threshold: 0.30
+  text_threshold: 0.30
+
+  # Mask deduplication threshold
+  # Objects with IoU above this value are considered the same object
+  iou_threshold: 0.5
+
+  # SAM model selection
+  # SAM2: sam2_hiera_tiny, sam2_hiera_small, sam2_hiera_base_plus, sam2_hiera_large
+  # SAM1: vit_b, vit_l, vit_h
+  sam_model: sam2_hiera_small
+
+  # Inpainting backend: iopaint, opencv, none
+  inpaint_backend: iopaint
+
+  # Mask dilation for inpainting (pixels)
+  mask_dilate_pixels: 12
+
+  # Save debug artifacts under outputs/<timestamp>/debug
+  save_debug: false
+
+  # Device: cuda or cpu
+  device: cuda

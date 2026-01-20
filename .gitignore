@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.DS_Store
+.idea/
+
+# Local outputs and checkpoints (keep directories only)
+outputs/*
+!outputs/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+
+# Agent notes (local only)
+AGENT.MD

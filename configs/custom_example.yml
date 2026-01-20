@@ -1,0 +1,135 @@
+# ============================================================
+# Grounded Segment Inpaint - 自定义配置文件模板
+# Custom Configuration Template
+# ============================================================
+#
+# 使用方法 / Usage:
+#   python main.py --image photo.jpg --config configs/custom_example.yml
+#
+# 复制此文件并根据需要修改 / Copy this file and modify as needed
+# ============================================================
+
+# ------------------------------------------------------------
+# 检测提示词列表 / Detection Prompts
+# ------------------------------------------------------------
+# 每个提示词会独立进行检测，检测到的物体会被分割并可选地移除
+# Each prompt is detected independently, objects are segmented and optionally removed
+#
+# 重要提示 / Important:
+# - 将常遮挡其他物体的提示词放在前面（如 robot arm）
+#   Put prompts that often occlude others first (e.g., robot arm)
+# - 提示词越具体越好，可以包含颜色/材质等修饰词
+#   More specific prompts work better, can include color/material modifiers
+# - 示例: "red cup", "wooden table", "metal knife"
+#
+prompts:
+  # 在此添加你要检测的物体 / Add objects you want to detect here
+  # - "robot arm"
+  # - "cup"
+  # - "knife"
+
+# ------------------------------------------------------------
+# 设置 / Settings
+# ------------------------------------------------------------
+settings:
+
+  # ----------------------------------------------------------
+  # 检测阈值 / Detection Thresholds
+  # ----------------------------------------------------------
+
+  # 检测框置信度阈值 (0.0 - 1.0)
+  # Box confidence threshold
+  # - 越高越严格，减少误检但可能漏检
+  # - Higher = stricter, fewer false positives but may miss objects
+  # - 推荐范围: 0.2 - 0.5
+  box_threshold: 0.25
+
+  # 文本匹配阈值 (0.0 - 1.0)
+  # Text matching threshold
+  # - 控制提示词与检测结果的匹配严格程度
+  # - Controls how strictly prompts match detections
+  # - 推荐范围: 0.2 - 0.5
+  text_threshold: 0.25
+
+  # ----------------------------------------------------------
+  # Mask 处理 / Mask Processing
+  # ----------------------------------------------------------
+
+  # Mask 去重 IoU 阈值 (0.0 - 1.0)
+  # IoU threshold for mask deduplication
+  # - 重叠度超过此值的 mask 会被合并（视为同一物体）
+  # - Masks with IoU above this are merged (considered same object)
+  # - 推荐: 0.5
+  iou_threshold: 0.5
+
+  # Inpaint 时的 Mask 膨胀像素数
+  # Mask dilation pixels for inpainting
+  # - 膨胀可以避免物体边缘残留
+  # - Dilation helps avoid edge artifacts
+  # - 推荐: 8 - 15
+  mask_dilate_pixels: 12
+
+  # ----------------------------------------------------------
+  # 模型选择 / Model Selection
+  # ----------------------------------------------------------
+
+  # Grounding DINO 模型
+  # - grounding-dino-tiny: 更快，显存占用少（默认）
+  # - grounding-dino-base: 更准确，但更慢
+  grounding_dino_model: grounding-dino-tiny
+
+  # SAM 模型
+  # SAM2 选项 (推荐):
+  # - sam2_hiera_tiny:      最快
+  # - sam2_hiera_small:     平衡（默认）
+  # - sam2_hiera_base_plus: 更准确
+  # - sam2_hiera_large:     最准确
+  #
+  # SAM1 选项 (备选):
+  # - vit_b: 快速 (91M 参数)
+  # - vit_l: 平衡 (308M 参数)
+  # - vit_h: 高精度 (636M 参数)
+  sam_model: sam2_hiera_small
+
+  # ----------------------------------------------------------
+  # 背景补全 / Background Inpainting
+  # ----------------------------------------------------------
+
+  # Inpaint 后端
+  # Inpainting backend
+  # - iopaint: 使用 LaMa 模型，效果最好（默认）
+  # - opencv:  使用 OpenCV 内置方法，速度快但效果一般
+  # - none:    不进行背景补全，只输出 mask
+  inpaint_backend: iopaint
+
+  # ----------------------------------------------------------
+  # 调试选项 / Debug Options
+  # ----------------------------------------------------------
+
+  # 保存调试产物
+  # Save debug artifacts
+  # - true:  保存每步的中间结果到 debug/ 目录
+  # - false: 只保存最终结果（默认）
+  save_debug: false
+
+  # ----------------------------------------------------------
+  # 输出尺寸 / Output Size
+  # ----------------------------------------------------------
+
+  # 强制缩放所有保存的图片结果
+  # Force resize for all saved images
+  # - 不设置则保持原始尺寸
+  # - When omitted, outputs keep original size
+  # - 格式: [宽, 高]
+  # - Format: [width, height]
+  # 示例 / Example: [448, 448]
+  output_size: [448, 448]
+
+  # ----------------------------------------------------------
+  # 设备 / Device
+  # ----------------------------------------------------------
+
+  # 运行设备
+  # - cuda: 使用 GPU（推荐）
+  # - cpu:  使用 CPU（较慢）
+  device: cuda

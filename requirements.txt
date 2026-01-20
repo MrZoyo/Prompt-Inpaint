@@ -1,0 +1,23 @@
+# Core dependencies
+torch>=2.0
+torchvision>=0.15
+
+# Grounding DINO (via HuggingFace - easiest installation)
+transformers>=4.36.0
+
+# SAM2 - install from source:
+# pip install git+https://github.com/facebookresearch/sam2.git
+
+# SAM1 (fallback) - install from source:
+# pip install git+https://github.com/facebookresearch/segment-anything.git
+
+# Inpainting
+iopaint>=1.2.0
+
+# Utilities
+numpy
+pillow
+opencv-python
+pyyaml
+requests
+tqdm
