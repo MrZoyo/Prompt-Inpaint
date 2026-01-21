@@ -112,7 +112,7 @@ python main.py --image photo.jpg --prompts "cup" --resize-output
 python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 ```
 
-**配置说明：** 不指定 `--config` 时不会自动加载 `configs/items.yml`，需要通过 `--prompts` 提供检测提示词。
+**配置说明：** 不指定 `--config` 时会自动加载 `configs/items.yml`（如果存在）；若默认配置不存在，则需要通过 `--prompts` 提供检测提示词。
 
 ### 示例结果（Sample）
 
@@ -141,7 +141,7 @@ python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 |------|------|--------|------|
 | `--image`, `-i` | str | **必填** | 输入图片路径 |
 | `--output-dir`, `-o` | str | `outputs/<timestamp>` | 输出目录 |
-| `--config`, `-c` | str | 无 | YAML 配置文件路径 |
+| `--config`, `-c` | str | `configs/items.yml` | YAML 配置文件路径 |
 | `--prompts`, `-p` | list | - | 检测提示词列表（覆盖配置文件） |
 | `--dino-model` | str | `grounding-dino-tiny` | Grounding DINO 模型 |
 | `--sam-model` | str | `sam2_hiera_small` | SAM 模型 |
@@ -158,7 +158,7 @@ python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 
 **注意：**
 - CLI 参数会覆盖配置文件中的对应设置
-- 只有显式指定 `--config` 时才会读取配置文件；否则使用代码内置默认值
+- 未指定 `--config` 时会尝试加载默认配置 `configs/items.yml`；若不存在则使用代码内置默认值
 - 例如：`items.yml` 使用 `box_threshold: 0.30`，所以如果加载该配置文件，实际阈值会是 0.30 而非 0.25
 
 ## 配置文件
@@ -351,6 +351,8 @@ batch_outputs/
 |------|------|----------|
 | `grounding-dino-tiny` | 更快，显存占用少 | 默认选择 |
 | `grounding-dino-base` | 更准确，但更慢 | 复杂场景或检测效果不佳时 |
+
+**离线/本地模型：** 如果存在 `checkpoints/grounding-dino-tiny` 或 `checkpoints/grounding-dino-base` 目录，会优先从本地加载；否则会尝试从 Hugging Face 下载。
 
 ### SAM
 

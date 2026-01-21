@@ -1,6 +1,7 @@
 """Grounding DINO object detection using HuggingFace transformers."""
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
@@ -33,12 +34,37 @@ class GroundingDINODetector:
         """
         self.device = device if torch.cuda.is_available() else "cpu"
         self.model_id = model_id
+        resolved_model_id = self._resolve_model_id(model_id)
 
-        print(f"Loading Grounding DINO from {model_id}...")
-        self.processor = AutoProcessor.from_pretrained(model_id)
-        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(self.device)
+        print(f"Loading Grounding DINO from {resolved_model_id}...")
+        local_only = Path(resolved_model_id).exists()
+        self.processor = AutoProcessor.from_pretrained(resolved_model_id, local_files_only=local_only)
+        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(
+            resolved_model_id,
+            local_files_only=local_only,
+        ).to(self.device)
         self.model.eval()
         print("Grounding DINO loaded.")
+
+    @staticmethod
+    def _resolve_model_id(model_id: str) -> str:
+        """Resolve model_id to a local checkpoints path if available."""
+        path = Path(model_id)
+        if path.exists():
+            return str(path)
+
+        checkpoints_dir = Path(__file__).parent.parent / "checkpoints"
+        if model_id in {"grounding-dino-tiny", "grounding-dino-base"}:
+            local_dir = checkpoints_dir / model_id
+        elif model_id.startswith("IDEA-Research/grounding-dino-"):
+            local_dir = checkpoints_dir / model_id.split("/", 1)[1]
+        else:
+            local_dir = checkpoints_dir / model_id
+
+        if local_dir.exists():
+            return str(local_dir)
+
+        return model_id
 
     def detect(
         self,
