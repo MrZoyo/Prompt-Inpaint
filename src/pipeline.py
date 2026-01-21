@@ -466,7 +466,7 @@ class SegmentInpaintPipeline:
 
         # Step 7: Generate desktop surface mask from the cleaned image
         desktop_mask = None
-        desktop_mask_path = output_path / "desktop_mask.png"
+        desktop_mask_path = output_path / "bg_mask.png"
         if final_image_np is None:
             print("Skipping desktop mask: clean background not available.")
         else:
@@ -486,7 +486,7 @@ class SegmentInpaintPipeline:
                 desktop_mask = combine_all_masks(desktop_objects)
                 if desktop_mask is not None:
                     self._save_image(mask_to_image(desktop_mask), desktop_mask_path, is_mask=True)
-                    print("Desktop mask saved.")
+                    print("Background surface mask saved.")
                 else:
                     print("No desktop mask produced after segmentation.")
             else:
@@ -511,7 +511,7 @@ class SegmentInpaintPipeline:
             ],
             "combined_mask": str(combined_path) if combined_mask is not None else None,
             "clean_background": str(clean_path) if clean_path else None,
-            "desktop_mask": str(desktop_mask_path) if desktop_mask is not None else None,
+            "bg_mask": str(desktop_mask_path) if desktop_mask is not None else None,
             "config": {
                 "prompts": self.config.prompts,
                 "sam_model": self.config.sam_model,
