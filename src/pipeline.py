@@ -303,6 +303,7 @@ class SegmentInpaintPipeline:
         # 2. For each object: inpaint → re-detect FIRST-PASS LABELS → expand if adjacent
         # 3. Expansion rules: same label, adjacent to original, area <= 3x original
         clean_path = output_path / "clean_background.png"
+        final_image_np: Optional[np.ndarray] = None
         if objects and self.config.inpaint_backend != "none":
             print(f"Inpainting background with {self.config.inpaint_backend}...")
             print(f"  Iterative inpaint + re-detection for {len(objects)} objects...")
@@ -458,9 +459,38 @@ class SegmentInpaintPipeline:
                 final_image = self.inpainter.inpaint(final_image, dilated)
 
             self._save_image(Image.fromarray(final_image), clean_path)
+            final_image_np = final_image
             print(f"Background inpainting complete.")
         else:
             clean_path = None
+
+        # Step 7: Generate desktop surface mask from the cleaned image
+        desktop_mask = None
+        desktop_mask_path = output_path / "desktop_mask.png"
+        if final_image_np is None:
+            print("Skipping desktop mask: clean background not available.")
+        else:
+            print("Detecting desktop surface...")
+            desktop_prompts = ["tabletop", "desk surface", "desktop surface"]
+            desktop_image = Image.fromarray(final_image_np)
+            desktop_detections = self.detect_objects(desktop_image, prompts=desktop_prompts)
+
+            if desktop_detections:
+                desktop_objects = self.segment_detections(final_image_np, desktop_detections)
+                desktop_objects = deduplicate_objects(
+                    desktop_objects,
+                    self.config.iou_threshold,
+                    self.config.containment_overlap_ratio,
+                    self.config.contour_overlap_ratio,
+                )
+                desktop_mask = combine_all_masks(desktop_objects)
+                if desktop_mask is not None:
+                    self._save_image(mask_to_image(desktop_mask), desktop_mask_path, is_mask=True)
+                    print("Desktop mask saved.")
+                else:
+                    print("No desktop mask produced after segmentation.")
+            else:
+                print("No desktop surface detected.")
 
         # Generate report
         report = {
@@ -481,6 +511,7 @@ class SegmentInpaintPipeline:
             ],
             "combined_mask": str(combined_path) if combined_mask is not None else None,
             "clean_background": str(clean_path) if clean_path else None,
+            "desktop_mask": str(desktop_mask_path) if desktop_mask is not None else None,
             "config": {
                 "prompts": self.config.prompts,
                 "sam_model": self.config.sam_model,
