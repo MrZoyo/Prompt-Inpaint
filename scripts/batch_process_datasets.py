@@ -123,8 +123,15 @@ Examples:
     )
     parser.add_argument(
         "--save-individual-masks",
-        action="store_true",
-        help="Save all object RGB masks to a separate 'masks' folder",
+        nargs="?",
+        const=0,
+        default=None,
+        type=int,
+        choices=[0, 1],
+        help=(
+            "Save object RGB masks to a separate 'masks' folder. "
+            "Optionally set to 1 to also save robot arm / gripper masks."
+        ),
     )
     parser.add_argument(
         "--no-inpaint",
@@ -178,8 +185,9 @@ def main() -> int:
         except ValueError as exc:
             print(f"Error: invalid --resize-output value '{args.resize_output}': {exc}")
             return 1
-    if args.save_individual_masks:
+    if args.save_individual_masks is not None:
         config.save_individual_masks = True
+        config.save_individual_masks_include_robot_gripper = bool(args.save_individual_masks)
     if args.no_inpaint:
         config.inpaint_backend = "none"
     if args.save_debug:
@@ -206,6 +214,11 @@ def main() -> int:
     print(f"  Prompts: {len(config.prompts)} items")
     print(f"  Inpaint: {config.inpaint_backend}")
     print(f"  Save Individual Masks: {config.save_individual_masks}")
+    if config.save_individual_masks:
+        print(
+            "  Include Robot/Gripper Masks: "
+            f"{config.save_individual_masks_include_robot_gripper}"
+        )
     if config.output_size:
         print(f"  Output Resize: {config.output_size[0]}x{config.output_size[1]}")
     print("=" * 60)

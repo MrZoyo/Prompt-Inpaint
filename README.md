@@ -37,7 +37,8 @@ uv venv --python 3.11 .venv
 source .venv/bin/activate
 
 # 2. 安装 PyTorch（根据你的 CUDA 版本调整）
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# 建议使用 torch 2.9.x（与当前 transformers 的自定义 CUDA 扩展兼容性更好）
+uv pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
 
 # 3. 安装主要依赖
 uv pip install --index-strategy unsafe-best-match \
@@ -47,7 +48,8 @@ uv pip install --index-strategy unsafe-best-match \
     "opencv-python>=4.8.0" \
     "pyyaml>=6.0" \
     "requests>=2.31.0" \
-    "tqdm>=4.66.0"
+    "tqdm>=4.66.0" \
+    "setuptools"
 
 # 4. 安装 SAM2
 uv pip install --index-strategy unsafe-best-match \
@@ -61,7 +63,7 @@ uv pip install --index-strategy unsafe-best-match \
 ### 使用 pip 安装
 
 ```bash
-pip install torch torchvision
+pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
 pip install transformers iopaint numpy opencv-python pyyaml requests tqdm
 pip install git+https://github.com/facebookresearch/sam2.git
 pip install git+https://github.com/facebookresearch/segment-anything.git  # 可选
@@ -71,6 +73,7 @@ pip install git+https://github.com/facebookresearch/segment-anything.git  # 可�
 
 ```bash
 pip install -r requirements.txt
+pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
 pip install git+https://github.com/facebookresearch/sam2.git
 ```
 
@@ -153,7 +156,7 @@ python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 | `--mask-dilate-pixels` | int | `12` | Mask 膨胀像素数（用于补全） |
 | `--no-inpaint` | flag | - | 跳过背景补全 |
 | `--save-debug` | flag | - | 保存调试产物 |
-| `--save-individual-masks` | flag | - | 将所有物体的 RGB mask 保存到单独的 `masks/` 文件夹 |
+| `--save-individual-masks [0\|1]` | int? | - | 保存单独的 RGB masks；默认不保存 `robot arm`/`gripper`，传 `1` 则包含 |
 | `--resize-output` | str | 关闭 | 强制缩放所有输出图片；不带值时默认 `448x448` |
 
 **注意：**
@@ -293,7 +296,7 @@ python scripts/batch_process_datasets.py \
     --output-dir ./batch_outputs \
     --config configs/items.yml
 
-# 带 resize 和 individual masks
+# 带 resize 和 individual masks（默认不保存 robot arm / gripper）
 python scripts/batch_process_datasets.py \
     --input-root /path/to/traj_group0 \
     --output-dir ./batch_outputs \
@@ -301,12 +304,12 @@ python scripts/batch_process_datasets.py \
     --resize-output 448x448 \
     --save-individual-masks
 
-# 跳过补全加速处理
+# 跳过补全加速处理（包含 robot arm / gripper）
 python scripts/batch_process_datasets.py \
     --input-root /path/to/traj_group0 \
     --output-dir ./batch_outputs \
     --no-inpaint \
-    --save-individual-masks
+    --save-individual-masks 1
 ```
 
 ### 批处理参数
@@ -317,7 +320,7 @@ python scripts/batch_process_datasets.py \
 | `--output-dir` | str | **必填** | 输出目录 |
 | `--config`, `-c` | str | `configs/items.yml` | 配置文件路径 |
 | `--resize-output` | str | 关闭 | 调整输出尺寸 |
-| `--save-individual-masks` | flag | - | 保存单独的 RGB masks |
+| `--save-individual-masks [0\|1]` | int? | - | 保存单独的 RGB masks；默认不保存 `robot arm`/`gripper`，传 `1` 则包含 |
 | `--no-inpaint` | flag | - | 跳过背景补全 |
 | `--save-debug` | flag | - | 保存调试产物 |
 | `--overwrite` | flag | - | 覆盖已存在的结果 |
@@ -405,6 +408,14 @@ batch_outputs/
 **建议：**
 - 确保 mask 膨胀足够（默认 12px）
 - 对于大面积物体，考虑使用其他专业修图工具
+
+### 5. 报错：MultiScaleDeformableAttention 编译失败 / cannot open shared object file
+
+**可能原因：** PyTorch 版本过新导致 transformers 的自定义 CUDA 扩展编译失败。
+
+**解决方案：**
+- 使用 torch 2.9.x + torchvision 0.24.x（与当前依赖兼容性更好）
+- 清理扩展缓存后重试：`rm -rf ~/.cache/torch_extensions/py311_cu128/MultiScaleDeformableAttention`
 
 ## 致谢
 

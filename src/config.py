@@ -40,6 +40,7 @@ class SegmentConfig:
 
     # Output options
     save_individual_masks: bool = False  # Save all RGB masks to a separate folder
+    save_individual_masks_include_robot_gripper: bool = False  # Include robot arm / gripper masks
 
     # Device
     device: str = "cuda"
@@ -67,6 +68,9 @@ class SegmentConfig:
             save_debug=settings.get("save_debug", False),
             output_size=parse_output_size(settings.get("output_size")),
             save_individual_masks=settings.get("save_individual_masks", False),
+            save_individual_masks_include_robot_gripper=settings.get(
+                "save_individual_masks_include_robot_gripper", False
+            ),
             device=settings.get("device", "cuda"),
         )
 
@@ -85,6 +89,9 @@ class SegmentConfig:
                 "inpaint_backend": self.inpaint_backend,
                 "save_debug": self.save_debug,
                 "save_individual_masks": self.save_individual_masks,
+                "save_individual_masks_include_robot_gripper": (
+                    self.save_individual_masks_include_robot_gripper
+                ),
                 "device": self.device,
             },
         }

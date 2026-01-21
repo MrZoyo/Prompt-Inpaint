@@ -21,3 +21,4 @@ opencv-python
 pyyaml
 requests
 tqdm
+setuptools

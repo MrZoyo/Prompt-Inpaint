@@ -127,8 +127,15 @@ SAM Models:
     )
     parser.add_argument(
         "--save-individual-masks",
-        action="store_true",
-        help="Save all object RGB masks to a separate 'masks' folder with object names",
+        nargs="?",
+        const=0,
+        default=None,
+        type=int,
+        choices=[0, 1],
+        help=(
+            "Save object RGB masks to a separate 'masks' folder with object names. "
+            "Optionally set to 1 to also save robot arm / gripper masks."
+        ),
     )
     parser.add_argument(
         "--resize-output",
@@ -190,8 +197,9 @@ def main():
         config.inpaint_backend = args.inpaint_backend
     if args.save_debug:
         config.save_debug = True
-    if args.save_individual_masks:
+    if args.save_individual_masks is not None:
         config.save_individual_masks = True
+        config.save_individual_masks_include_robot_gripper = bool(args.save_individual_masks)
     if args.resize_output is not None:
         try:
             config.output_size = parse_output_size(args.resize_output)
@@ -225,6 +233,11 @@ def main():
     print(f"  Inpaint: {config.inpaint_backend}")
     print(f"  Save Debug: {config.save_debug}")
     print(f"  Save Individual Masks: {config.save_individual_masks}")
+    if config.save_individual_masks:
+        print(
+            "  Include Robot/Gripper Masks: "
+            f"{config.save_individual_masks_include_robot_gripper}"
+        )
     if config.output_size:
         print(f"  Output Resize: {config.output_size[0]}x{config.output_size[1]}")
     print("=" * 50)

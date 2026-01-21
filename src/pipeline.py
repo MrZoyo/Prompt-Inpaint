@@ -262,9 +262,17 @@ class SegmentInpaintPipeline:
             masks_dir = output_path / "masks"
             masks_dir.mkdir(exist_ok=True)
 
+            skip_labels = {"robot arm", "gripper"}
+            include_robot_gripper = self.config.save_individual_masks_include_robot_gripper
+
             # Track used names to handle duplicates
             name_counts = {}
+            saved_count = 0
             for obj in objects:
+                if not include_robot_gripper:
+                    if any(label.strip().lower() in skip_labels for label in obj.labels):
+                        continue
+
                 # Use first label as filename
                 base_name = obj.labels[0].replace(" ", "_").replace("/", "-")
 
@@ -280,7 +288,9 @@ class SegmentInpaintPipeline:
                 rgb_mask = mask_to_rgb(image_np, obj.mask)
                 self._save_image(rgb_mask, masks_dir / filename)
 
-            print(f"  Saved {len(objects)} RGB masks to: {masks_dir}")
+                saved_count += 1
+
+            print(f"  Saved {saved_count} RGB masks to: {masks_dir}")
 
         # Step 5: Combine masks (original precise masks for reference)
         combined_mask = combine_all_masks(objects)
