@@ -38,10 +38,15 @@ class GroundingDINODetector:
 
         print(f"Loading Grounding DINO from {resolved_model_id}...")
         local_only = Path(resolved_model_id).exists()
-        self.processor = AutoProcessor.from_pretrained(resolved_model_id, local_files_only=local_only)
+        self.processor = AutoProcessor.from_pretrained(
+            resolved_model_id,
+            local_files_only=local_only,
+            trust_remote_code=True,
+        )
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(
             resolved_model_id,
             local_files_only=local_only,
+            trust_remote_code=True,
         ).to(self.device)
         self.model.eval()
         print("Grounding DINO loaded.")
