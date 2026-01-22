@@ -40,6 +40,7 @@ prompts:
   - "rag"
   - "towel"
   - "sponge"
+  - "brush"
 
   # ========== Office & Tools (办公/工具) ==========
   # - "pen"
