@@ -60,7 +60,14 @@ def find_first_image(root: Path, exclude_dir: Path | None = None) -> Path | None
     the lexicographically first image under root (recursive).
     Does not load images; only scans paths.
     """
-    # Prefer imagesN folders if present
+    # Prefer images0 if present
+    images0 = root / "images0"
+    if images0.is_dir():
+        picked = _pick_image_in_dir(images0)
+        if picked is not None:
+            return picked
+
+    # Otherwise, prefer lowest imagesN folder
     image_dirs = []
     for child in root.iterdir():
         if not child.is_dir():
