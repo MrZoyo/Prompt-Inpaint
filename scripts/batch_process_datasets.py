@@ -2,7 +2,7 @@
 """
 Batch process traj datasets.
 
-For each trajX_Y directory under the scene root, find the first image and run main.py.
+For each traj* directory under the input root, find the first image and run main.py.
 Results mirror the input structure under the output root.
 """
 
@@ -94,6 +94,40 @@ def find_traj_dirs(root: Path, exclude_dir: Path | None = None) -> list[Path]:
     return sorted(traj_dirs, key=lambda p: p.as_posix())
 
 
+def _is_task_root(root: Path) -> bool:
+    seen_traj = False
+    seen_other = False
+    for child in root.iterdir():
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        if TRAJ_DIR_RE.match(child.name):
+            seen_traj = True
+        else:
+            seen_other = True
+    return seen_traj and not seen_other
+
+
+def _compute_output_base(input_root: Path, output_root: Path) -> tuple[Path, str, str | None]:
+    """
+    Decide output base directory based on whether input_root is a scene or task dir
+    (task dir = contains only traj* subdirs).
+    Returns (output_base, scene_name, task_name).
+    """
+    if _is_task_root(input_root):
+        scene_name = input_root.parent.name
+        task_name = input_root.name
+        base = output_root
+        if output_root.name != scene_name:
+            base = output_root / scene_name
+        return base / task_name, scene_name, task_name
+
+    scene_name = input_root.name
+    base = output_root
+    if output_root.name != scene_name:
+        base = output_root / scene_name
+    return base, scene_name, None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Batch process traj datasets by looping main.py.",
@@ -121,6 +155,12 @@ Examples:
       --config configs/items.yml \\
       --no-inpaint
 
+  # Task directory input (traj* directly under many_skills)
+  python scripts/batch_process_datasets.py \\
+      --input-root /path/to/datacol1_toykitchen1/many_skills \\
+      --output-dir ./batch_outputs \\
+      --config configs/items.yml
+
 Notes:
   - Any extra args not recognized by this script are forwarded to main.py.
   - Do not pass --image/-i or --output-dir/-o; they are set per sub-dataset.
@@ -129,14 +169,14 @@ Notes:
     parser.add_argument(
         "--input-root",
         required=True,
-        help="Scene directory containing task folders with trajX_Y subdirs",
+        help="Scene directory or task directory (only traj* subdirs)",
     )
     parser.add_argument(
         "--output-dir",
         required=True,
         help=(
-            "Output root directory. If it does not end with the scene name, "
-            "the scene folder will be created inside it."
+            "Output root directory. If input-root is a task dir (contains traj*), "
+            "the output will include <scene>/<task>. Otherwise it includes <scene>."
         ),
     )
     parser.add_argument(
@@ -266,12 +306,10 @@ def main() -> int:
 
     forward_args = _build_forward_args(args)
 
-    output_scene_dir = output_root
-    if output_root.name != input_root.name:
-        output_scene_dir = output_root / input_root.name
-    output_scene_dir.mkdir(parents=True, exist_ok=True)
+    output_base, scene_name, task_name = _compute_output_base(input_root, output_root)
+    output_base.mkdir(parents=True, exist_ok=True)
 
-    exclude_dir = output_scene_dir if _is_within(output_scene_dir, input_root) else None
+    exclude_dir = output_base if _is_within(output_base, input_root) else None
     traj_dirs = find_traj_dirs(input_root, exclude_dir=exclude_dir)
     if not traj_dirs:
         print(f"No trajX_Y directories found under: {input_root}")
@@ -283,9 +321,9 @@ def main() -> int:
 
     # Print config summary (as forwarded args)
     if forward_args:
-        print("Forwarded args to main.py:")
-        print(f"  {' '.join(forward_args)}")
-        print("=" * 60)
+    print("Forwarded args to main.py:")
+    print(f"  {' '.join(forward_args)}")
+    print("=" * 60)
 
     processed = 0
     skipped = 0
@@ -293,7 +331,7 @@ def main() -> int:
 
     for idx, traj_dir in enumerate(traj_dirs, 1):
         rel_path = traj_dir.relative_to(input_root)
-        subdir_output = output_scene_dir / rel_path
+        subdir_output = output_base / rel_path
 
         # Check if already processed
         if subdir_output.exists() and not args.overwrite:
@@ -306,7 +344,7 @@ def main() -> int:
         # Find first image
         first_image = find_first_image(
             traj_dir,
-            exclude_dir=output_scene_dir if _is_within(output_scene_dir, traj_dir) else None
+            exclude_dir=output_base if _is_within(output_base, traj_dir) else None
         )
         if first_image is None:
             print(f"[{idx}/{total}] [Skip] No image found: {rel_path.as_posix()}")
@@ -344,7 +382,8 @@ def main() -> int:
     print(f"  Processed: {processed}")
     print(f"  Skipped: {skipped}")
     print(f"  Failed: {failed}")
-    print(f"  Output: {output_scene_dir}")
+    output_label = f"{scene_name}/{task_name}" if task_name else scene_name
+    print(f"  Output: {output_base} ({output_label})")
     print("=" * 60)
 
     return 0 if failed == 0 else 1
