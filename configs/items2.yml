@@ -1,0 +1,90 @@
+# Object detection prompts for grounded segmentation
+# Organized by Bridge V2 dataset scene categories
+# Reference: https://rail-berkeley.github.io/bridgedata/
+
+prompts:
+  # ========== Robot & Equipment (机器人/设备) ==========
+  - "robot arm"
+  - "gripper"
+
+  # ========== Kitchen Utensils (厨房用具) ==========
+  - "pot"
+  - "pan"
+  - "cup"
+  - "mug"
+  - "bowl"
+  - "plate"
+  - "knife"
+  - "spoon"
+  - "fork"
+  - "spatula"
+  - "bottle"
+  - "can"
+
+  # ========== Food Items (食物) ==========
+  - "bread"
+  - "croissant"
+  - "garlic"
+  - "onion"
+  - "apple"
+  - "banana"
+  - "carrot"
+  - "tomato"
+  - "corn"
+  - "egg"
+  - "fries"
+  - "cucumber"
+  - "eggplant"
+
+  # ========== Cleaning & Fabric (清洁/布料) ==========
+  - "rag"
+  - "towel"
+  - "sponge"
+  - "brush"
+
+  # ========== Office & Tools (办公/工具) ==========
+  # - "pen"
+  # - "pencil"
+  # - "book"
+  # - "phone"
+  # - "keyboard"
+  # - "computer mouse"
+
+  # ========== Others (其他物品) ==========
+  - "plush toy"
+  - "toy bricks"
+  - "screw"
+  - "nail"
+  - "iron bar"
+
+
+settings:
+  # Grounding DINO detection thresholds
+  box_threshold: 0.35
+  text_threshold: 0.35
+
+  # Mask deduplication threshold
+  # Objects with IoU above this value are considered the same object
+  iou_threshold: 0.5
+
+  # Containment merge (split correction)
+  # If small mask overlap ratio > 0.9 and contour overlap > 0.3, merge them
+  containment_overlap_ratio: 0.9
+  contour_overlap_ratio: 0.3
+
+  # SAM model selection
+  # SAM2: sam2_hiera_tiny, sam2_hiera_small, sam2_hiera_base_plus, sam2_hiera_large
+  # SAM1: vit_b, vit_l, vit_h
+  sam_model: sam2_hiera_small
+
+  # Inpainting backend: iopaint, opencv, none
+  inpaint_backend: iopaint
+
+  # Mask dilation for inpainting (pixels)
+  mask_dilate_pixels: 12
+
+  # Save debug artifacts under outputs/<timestamp>/debug
+  save_debug: false
+
+  # Device: cuda or cpu
+  device: cuda
