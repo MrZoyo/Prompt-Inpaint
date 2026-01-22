@@ -270,7 +270,9 @@ class SegmentInpaintPipeline:
             saved_count = 0
             for obj in objects:
                 if not include_robot_gripper:
-                    if any(label.strip().lower() in skip_labels for label in obj.labels):
+                    # Only skip if the PRIMARY label (first label) is robot arm/gripper
+                    primary_label = obj.labels[0].strip().lower() if obj.labels else ""
+                    if primary_label in skip_labels:
                         continue
 
                 # Use first label as filename
