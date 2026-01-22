@@ -20,6 +20,11 @@ from pathlib import Path
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 TRAJ_DIR_RE = re.compile(r"^traj.*$")
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.config import SegmentConfig, parse_output_size
+from src.pipeline import SegmentInpaintPipeline
 
 def _is_within(child: Path, parent: Path) -> bool:
     try:
@@ -119,8 +124,17 @@ Examples:
       --max-per-scene 5 \\
       --config configs/items.yml
 
+  # Reuse model in-process (default)
+  python scripts/sample_random_trajs.py \\
+      --input-root /home/discover/sam3d_gs/raw_data \\
+      --output-dir /home/discover/sam3d_gs/data \\
+      --max-per-scene 5 \\
+      --sam-model sam2_hiera_large \\
+      --dino-model grounding-dino-base
+
 Notes:
-  - Any extra args not recognized by this script are forwarded to main.py.
+  - Any extra args not recognized by this script are forwarded to main.py,
+    unless reuse is enabled (default), in which case they are ignored.
   - Do not pass --image/-i or --output-dir/-o; they are set per sample.
         """,
     )
@@ -141,6 +155,11 @@ Notes:
         help="Maximum number of trajectories sampled per scene",
     )
     parser.add_argument(
+        "--no-reuse-model",
+        action="store_true",
+        help="Disable in-process reuse; call main.py for each sample",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -150,6 +169,53 @@ Notes:
         "--config", "-c",
         default=None,
         help="Path to YAML config file (default: configs/items.yml)",
+    )
+    parser.add_argument(
+        "--prompts", "-p",
+        nargs="+",
+        default=None,
+        help="Text prompts for object detection (override config)",
+    )
+    parser.add_argument(
+        "--sam-model",
+        default=None,
+        help="SAM model to use (default: sam2_hiera_small)",
+    )
+    parser.add_argument(
+        "--dino-model",
+        default=None,
+        choices=["grounding-dino-tiny", "grounding-dino-base"],
+        help="Grounding DINO model (default: grounding-dino-tiny)",
+    )
+    parser.add_argument(
+        "--box-threshold",
+        type=float,
+        default=None,
+        help="Grounding DINO box confidence threshold (default: 0.25)",
+    )
+    parser.add_argument(
+        "--text-threshold",
+        type=float,
+        default=None,
+        help="Grounding DINO text confidence threshold (default: 0.25)",
+    )
+    parser.add_argument(
+        "--iou-threshold",
+        type=float,
+        default=None,
+        help="IoU threshold for mask deduplication (default: 0.5)",
+    )
+    parser.add_argument(
+        "--mask-dilate-pixels",
+        type=int,
+        default=None,
+        help="Mask dilation pixels for inpainting (default: 12)",
+    )
+    parser.add_argument(
+        "--inpaint-backend",
+        choices=["iopaint", "opencv", "none"],
+        default=None,
+        help="Inpainting backend (default: iopaint)",
     )
     parser.add_argument(
         "--resize-output",
@@ -257,6 +323,55 @@ def _run_main(
     return result.returncode
 
 
+def _load_config(args: argparse.Namespace) -> SegmentConfig:
+    if args.config:
+        config_path = Path(args.config)
+    else:
+        config_path = Path(__file__).parent.parent / "configs" / "items.yml"
+
+    if config_path.exists():
+        config = SegmentConfig.from_yaml(str(config_path))
+        print(f"Loaded config from: {config_path}")
+    else:
+        if args.config:
+            print(f"Error: Config file not found: {config_path}")
+            raise FileNotFoundError(str(config_path))
+        config = SegmentConfig()
+
+    if args.prompts:
+        config.prompts = args.prompts
+    if args.sam_model is not None:
+        config.sam_model = args.sam_model
+    if args.dino_model is not None:
+        config.grounding_dino_model = args.dino_model
+    if args.device is not None:
+        config.device = args.device
+    if args.box_threshold is not None:
+        config.box_threshold = args.box_threshold
+    if args.text_threshold is not None:
+        config.text_threshold = args.text_threshold
+    if args.iou_threshold is not None:
+        config.iou_threshold = args.iou_threshold
+    if args.mask_dilate_pixels is not None:
+        config.mask_dilate_pixels = args.mask_dilate_pixels
+    if args.no_inpaint:
+        config.inpaint_backend = "none"
+    elif args.inpaint_backend is not None:
+        config.inpaint_backend = args.inpaint_backend
+    if args.save_debug:
+        config.save_debug = True
+    if args.save_individual_masks is not None:
+        config.save_individual_masks = True
+        config.save_individual_masks_include_robot_gripper = bool(args.save_individual_masks)
+    if args.resize_output is not None:
+        config.output_size = parse_output_size(args.resize_output)
+
+    if not config.prompts:
+        raise ValueError("No prompts provided. Use --prompts or --config.")
+
+    return config
+
+
 def main() -> int:
     args = parse_args()
     input_root = Path(args.input_root)
@@ -274,11 +389,23 @@ def main() -> int:
         print(f"Error: main.py not found: {main_path}")
         return 1
 
-    forward_args = _build_forward_args(args)
-    if forward_args:
-        print("Forwarded args to main.py:")
-        print(f"  {' '.join(forward_args)}")
-        print("=" * 60)
+    pipeline = None
+    if not args.no_reuse_model:
+        if args._extra_args:
+            print(f"Warning: ignored extra args in reuse mode: {' '.join(args._extra_args)}")
+        try:
+            config = _load_config(args)
+        except Exception as exc:
+            print(f"Error: {exc}")
+            return 1
+        pipeline = SegmentInpaintPipeline(config)
+        forward_args = []
+    else:
+        forward_args = _build_forward_args(args)
+        if forward_args:
+            print("Forwarded args to main.py:")
+            print(f"  {' '.join(forward_args)}")
+            print("=" * 60)
 
     rng = random.Random(args.seed) if args.seed is not None else random
 
@@ -347,22 +474,34 @@ def main() -> int:
             print(f"    Source: {traj_dir}")
             print(f"    Image: {first_image.relative_to(traj_dir)}")
 
-            try:
-                code = _run_main(
-                    image_path=first_image,
-                    output_dir=output_dir,
-                    forward_args=forward_args,
-                    main_path=main_path,
-                )
-            except Exception as exc:
-                print(f"    [Error] {exc}")
-                failed += 1
-                continue
+            if pipeline is not None:
+                try:
+                    report = pipeline.process(
+                        image_path=str(first_image),
+                        output_dir=str(output_dir),
+                    )
+                    print(f"    -> {report.get('num_objects', 0)} objects detected")
+                except Exception as exc:
+                    print(f"    [Error] {exc}")
+                    failed += 1
+                    continue
+            else:
+                try:
+                    code = _run_main(
+                        image_path=first_image,
+                        output_dir=output_dir,
+                        forward_args=forward_args,
+                        main_path=main_path,
+                    )
+                except Exception as exc:
+                    print(f"    [Error] {exc}")
+                    failed += 1
+                    continue
 
-            if code != 0:
-                print(f"    [Error] main.py exited with code {code}")
-                failed += 1
-                continue
+                if code != 0:
+                    print(f"    [Error] main.py exited with code {code}")
+                    failed += 1
+                    continue
 
             mapping[output_name] = str(traj_dir)
             processed += 1
