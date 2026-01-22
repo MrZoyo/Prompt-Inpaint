@@ -19,6 +19,7 @@ from pathlib import Path
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 TRAJ_DIR_RE = re.compile(r"^traj.*$")
+IMAGE_DIR_RE = re.compile(r"^images(\d+)$")
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -38,11 +39,43 @@ def _is_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_EXTS
 
 
+def _pick_image_in_dir(images_dir: Path) -> Path | None:
+    if not images_dir.exists() or not images_dir.is_dir():
+        return None
+    candidates = sorted(
+        [p for p in images_dir.iterdir() if _is_image(p)],
+        key=lambda p: p.name,
+    )
+    if not candidates:
+        return None
+    for p in candidates:
+        if p.stem == "im_0":
+            return p
+    return candidates[0]
+
+
 def find_first_image(root: Path, exclude_dir: Path | None = None) -> Path | None:
     """
-    Find the lexicographically first image under root (recursive).
+    Prefer imagesN/im_0.* (images0 if available), otherwise fallback to
+    the lexicographically first image under root (recursive).
     Does not load images; only scans paths.
     """
+    # Prefer imagesN folders if present
+    image_dirs = []
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        match = IMAGE_DIR_RE.match(child.name)
+        if match:
+            idx = int(match.group(1))
+            image_dirs.append((idx, child))
+    if image_dirs:
+        image_dirs.sort(key=lambda x: x[0])
+        for _, img_dir in image_dirs:
+            picked = _pick_image_in_dir(img_dir)
+            if picked is not None:
+                return picked
+
     best_path = None
     best_key = None
 
@@ -53,6 +86,8 @@ def find_first_image(root: Path, exclude_dir: Path | None = None) -> Path | None
         filtered = []
         for d in dirnames:
             if d.startswith("."):
+                continue
+            if d.startswith("depth") or d.startswith("mask"):
                 continue
             candidate = dirpath_p / d
             if exclude_dir and _is_within(candidate, exclude_dir):
