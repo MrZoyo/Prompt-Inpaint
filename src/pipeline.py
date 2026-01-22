@@ -321,6 +321,36 @@ class SegmentInpaintPipeline:
             # Only re-detect labels seen in the first pass
             detected_labels = sorted({label for obj in objects for label in obj.labels})
 
+            def _match_prompts_for_redetect(prompts, labels):
+                if not prompts or not labels:
+                    return []
+                cleaned_labels = []
+                for label in labels:
+                    if not label:
+                        continue
+                    cleaned = label.lstrip("#").strip().lower()
+                    if cleaned:
+                        cleaned_labels.append(cleaned)
+                if not cleaned_labels:
+                    return []
+                matched = []
+                for prompt in prompts:
+                    prompt_text = str(prompt).strip()
+                    if not prompt_text:
+                        continue
+                    prompt_lower = prompt_text.lower()
+                    if any(token in prompt_lower for token in cleaned_labels):
+                        matched.append(prompt_text)
+                seen = set()
+                unique = []
+                for prompt in matched:
+                    if prompt not in seen:
+                        seen.add(prompt)
+                        unique.append(prompt)
+                return unique
+
+            redetect_prompts = _match_prompts_for_redetect(self.config.prompts, detected_labels)
+
             # Build initial object registry: label -> (mask, area)
             # Track expanded masks for each original object
             object_masks = {}  # obj_id -> current mask (may be expanded)
@@ -367,7 +397,9 @@ class SegmentInpaintPipeline:
                 # Re-detect to find expansions of OTHER objects (not the one we just removed)
                 print(f"        Re-detecting for mask expansion...")
                 temp_pil = Image.fromarray(temp_inpainted)
-                new_detections = self.detect_objects(temp_pil, prompts=detected_labels)
+                new_detections = (
+                    self.detect_objects(temp_pil, prompts=redetect_prompts) if redetect_prompts else []
+                )
 
                 if new_detections:
                     new_objects = self.segment_detections(temp_inpainted, new_detections)
