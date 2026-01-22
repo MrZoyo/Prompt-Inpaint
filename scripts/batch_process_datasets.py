@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 """
-Batch process Bridge V2 datasets.
+Batch process traj datasets.
 
-For each sub-dataset, find the first image and run the segmentation pipeline.
-Results are saved to output_dir/<subdir_name>/.
+For each trajX_Y directory under the scene root, find the first image and run main.py.
+Results mirror the input structure under the output root.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.config import SegmentConfig, parse_output_size
-from src.pipeline import SegmentInpaintPipeline
-
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
+TRAJ_DIR_RE = re.compile(r"^traj.*$")
 
 
 def _is_within(child: Path, parent: Path) -> bool:
@@ -71,21 +69,46 @@ def find_first_image(root: Path, exclude_dir: Path | None = None) -> Path | None
     return best_path
 
 
+def find_traj_dirs(root: Path, exclude_dir: Path | None = None) -> list[Path]:
+    """
+    Find all trajX_Y directories under root (recursive), excluding output dirs.
+    """
+    traj_dirs: list[Path] = []
+
+    for dirpath, dirnames, _ in os.walk(root):
+        dirpath_p = Path(dirpath)
+
+        filtered = []
+        for d in dirnames:
+            if d.startswith("."):
+                continue
+            candidate = dirpath_p / d
+            if exclude_dir and _is_within(candidate, exclude_dir):
+                continue
+            if TRAJ_DIR_RE.match(d):
+                traj_dirs.append(candidate)
+                continue
+            filtered.append(d)
+        dirnames[:] = sorted(filtered)
+
+    return sorted(traj_dirs, key=lambda p: p.as_posix())
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Batch process Bridge V2 datasets with segmentation pipeline.",
+        description="Batch process traj datasets by looping main.py.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Basic usage
   python scripts/batch_process_datasets.py \\
-      --input-root /path/to/traj_group0 \\
+      --input-root /path/to/datacol1_toykitchen1 \\
       --output-dir ./batch_outputs \\
       --config configs/items.yml
 
   # With resize and individual masks
   python scripts/batch_process_datasets.py \\
-      --input-root /path/to/traj_group0 \\
+      --input-root /path/to/datacol1_toykitchen1 \\
       --output-dir ./batch_outputs \\
       --config configs/items.yml \\
       --resize-output 448x448 \\
@@ -93,21 +116,28 @@ Examples:
 
   # Skip inpainting for faster processing
   python scripts/batch_process_datasets.py \\
-      --input-root /path/to/traj_group0 \\
+      --input-root /path/to/datacol1_toykitchen1 \\
       --output-dir ./batch_outputs \\
       --config configs/items.yml \\
       --no-inpaint
+
+Notes:
+  - Any extra args not recognized by this script are forwarded to main.py.
+  - Do not pass --image/-i or --output-dir/-o; they are set per sub-dataset.
         """,
     )
     parser.add_argument(
         "--input-root",
         required=True,
-        help="Root directory containing sub-datasets (e.g., /path/to/traj_group0)",
+        help="Scene directory containing task folders with trajX_Y subdirs",
     )
     parser.add_argument(
         "--output-dir",
         required=True,
-        help="Directory to save processing results",
+        help=(
+            "Output root directory. If it does not end with the scene name, "
+            "the scene folder will be created inside it."
+        ),
     )
     parser.add_argument(
         "--config", "-c",
@@ -153,113 +183,156 @@ Examples:
         default=None,
         help="Device to run on (default: cuda)",
     )
-    return parser.parse_args()
+    args, extra_args = parser.parse_known_args()
+    args._extra_args = extra_args
+    return args
+
+
+def _filter_conflicting_args(extra_args: list[str]) -> tuple[list[str], list[str]]:
+    removed = []
+    filtered = []
+    skip_next = False
+    for arg in extra_args:
+        if skip_next:
+            removed.append(arg)
+            skip_next = False
+            continue
+        if arg in {"--image", "-i", "--output-dir", "-o"}:
+            removed.append(arg)
+            skip_next = True
+            continue
+        if arg.startswith("--image=") or arg.startswith("--output-dir="):
+            removed.append(arg)
+            continue
+        filtered.append(arg)
+    return filtered, removed
+
+
+def _build_forward_args(args: argparse.Namespace) -> list[str]:
+    forward_args = list(args._extra_args)
+
+    if args.config:
+        forward_args += ["--config", args.config]
+    if args.resize_output is not None:
+        forward_args += ["--resize-output", args.resize_output]
+    if args.save_individual_masks is not None:
+        forward_args += ["--save-individual-masks", str(args.save_individual_masks)]
+    if args.no_inpaint:
+        forward_args.append("--no-inpaint")
+    if args.save_debug:
+        forward_args.append("--save-debug")
+    if args.device:
+        forward_args += ["--device", args.device]
+
+    forward_args, removed = _filter_conflicting_args(forward_args)
+    if removed:
+        print(f"Warning: ignored conflicting args: {' '.join(removed)}")
+
+    return forward_args
+
+
+def _run_main(
+    image_path: Path,
+    output_dir: Path,
+    forward_args: list[str],
+    main_path: Path,
+) -> int:
+    cmd = [
+        sys.executable,
+        str(main_path),
+        "--image",
+        str(image_path),
+        "--output-dir",
+        str(output_dir),
+        *forward_args,
+    ]
+    result = subprocess.run(cmd)
+    return result.returncode
 
 
 def main() -> int:
     args = parse_args()
     input_root = Path(args.input_root)
-    output_dir = Path(args.output_dir)
+    output_root = Path(args.output_dir)
 
     if not input_root.exists() or not input_root.is_dir():
         print(f"Error: input root not found or not a directory: {input_root}")
         return 1
 
-    # Load config
-    if args.config:
-        config_path = Path(args.config)
-    else:
-        config_path = Path(__file__).parent.parent / "configs" / "items.yml"
-
-    if not config_path.exists():
-        print(f"Error: config file not found: {config_path}")
+    main_path = Path(__file__).parent.parent / "main.py"
+    if not main_path.exists():
+        print(f"Error: main.py not found: {main_path}")
         return 1
 
-    config = SegmentConfig.from_yaml(str(config_path))
-    print(f"Loaded config from: {config_path}")
+    forward_args = _build_forward_args(args)
 
-    # Apply CLI overrides
-    if args.resize_output is not None:
-        try:
-            config.output_size = parse_output_size(args.resize_output)
-        except ValueError as exc:
-            print(f"Error: invalid --resize-output value '{args.resize_output}': {exc}")
-            return 1
-    if args.save_individual_masks is not None:
-        config.save_individual_masks = True
-        config.save_individual_masks_include_robot_gripper = bool(args.save_individual_masks)
-    if args.no_inpaint:
-        config.inpaint_backend = "none"
-    if args.save_debug:
-        config.save_debug = True
-    if args.device:
-        config.device = args.device
+    output_scene_dir = output_root
+    if output_root.name != input_root.name:
+        output_scene_dir = output_root / input_root.name
+    output_scene_dir.mkdir(parents=True, exist_ok=True)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Iterate immediate subdirectories only
-    subdirs = [p for p in input_root.iterdir() if p.is_dir() and not p.name.startswith(".")]
-    if not subdirs:
-        print(f"No subdirectories found under: {input_root}")
+    exclude_dir = output_scene_dir if _is_within(output_scene_dir, input_root) else None
+    traj_dirs = find_traj_dirs(input_root, exclude_dir=exclude_dir)
+    if not traj_dirs:
+        print(f"No trajX_Y directories found under: {input_root}")
         return 1
 
-    subdirs = sorted(subdirs)
-    total = len(subdirs)
-    print(f"Found {total} sub-datasets to process")
+    total = len(traj_dirs)
+    print(f"Found {total} traj datasets to process")
     print("=" * 60)
 
-    # Print config summary
-    print("Configuration:")
-    print(f"  Config: {config_path}")
-    print(f"  Prompts: {len(config.prompts)} items")
-    print(f"  Inpaint: {config.inpaint_backend}")
-    print(f"  Save Individual Masks: {config.save_individual_masks}")
-    if config.save_individual_masks:
-        print(
-            "  Include Robot/Gripper Masks: "
-            f"{config.save_individual_masks_include_robot_gripper}"
-        )
-    if config.output_size:
-        print(f"  Output Resize: {config.output_size[0]}x{config.output_size[1]}")
-    print("=" * 60)
-
-    # Initialize pipeline once (models will be loaded lazily on first use)
-    pipeline = SegmentInpaintPipeline(config)
+    # Print config summary (as forwarded args)
+    if forward_args:
+        print("Forwarded args to main.py:")
+        print(f"  {' '.join(forward_args)}")
+        print("=" * 60)
 
     processed = 0
     skipped = 0
     failed = 0
 
-    for idx, subdir in enumerate(subdirs, 1):
-        subdir_output = output_dir / subdir.name
+    for idx, traj_dir in enumerate(traj_dirs, 1):
+        rel_path = traj_dir.relative_to(input_root)
+        subdir_output = output_scene_dir / rel_path
 
         # Check if already processed
         if subdir_output.exists() and not args.overwrite:
             report_file = subdir_output / "report.json"
             if report_file.exists():
-                print(f"[{idx}/{total}] [Skip] Already exists: {subdir.name}")
+                print(f"[{idx}/{total}] [Skip] Already exists: {rel_path.as_posix()}")
                 skipped += 1
                 continue
 
         # Find first image
         first_image = find_first_image(
-            subdir,
-            exclude_dir=output_dir if _is_within(output_dir, subdir) else None
+            traj_dir,
+            exclude_dir=output_scene_dir if _is_within(output_scene_dir, traj_dir) else None
         )
         if first_image is None:
-            print(f"[{idx}/{total}] [Skip] No image found: {subdir.name}")
+            print(f"[{idx}/{total}] [Skip] No image found: {rel_path.as_posix()}")
             skipped += 1
             continue
 
-        print(f"[{idx}/{total}] Processing: {subdir.name}")
-        print(f"           Image: {first_image.relative_to(subdir)}")
+        print(f"[{idx}/{total}] Processing: {rel_path.as_posix()}")
+        print(f"           Image: {first_image.relative_to(traj_dir)}")
 
         try:
-            report = pipeline.process(
-                image_path=str(first_image),
-                output_dir=str(subdir_output),
+            code = _run_main(
+                image_path=first_image,
+                output_dir=subdir_output,
+                forward_args=forward_args,
+                main_path=main_path,
             )
-            print(f"           -> {report['num_objects']} objects detected")
+            if code != 0:
+                print(f"           [Error] main.py exited with code {code}")
+                failed += 1
+                continue
+
+            report_file = subdir_output / "report.json"
+            if report_file.exists():
+                with open(report_file, "r", encoding="utf-8") as f:
+                    report = json.load(f)
+                print(f"           -> {report.get('num_objects', 0)} objects detected")
             processed += 1
         except Exception as e:
             print(f"           [Error] {e}")
@@ -271,7 +344,7 @@ def main() -> int:
     print(f"  Processed: {processed}")
     print(f"  Skipped: {skipped}")
     print(f"  Failed: {failed}")
-    print(f"  Output: {output_dir}")
+    print(f"  Output: {output_scene_dir}")
     print("=" * 60)
 
     return 0 if failed == 0 else 1

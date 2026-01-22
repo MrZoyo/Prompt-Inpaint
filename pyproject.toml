@@ -5,7 +5,7 @@ description = "Detect objects with text prompts, segment with SAM, and inpaint b
 requires-python = ">=3.10,<3.12"
 dependencies = [
     # Grounding DINO via HuggingFace
-    "transformers>=4.36.0",
+    "transformers>=4.48.0",
 
     # Inpainting (pins pillow==9.5.0)
     "iopaint>=1.2.0",
