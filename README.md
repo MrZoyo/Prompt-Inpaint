@@ -93,11 +93,14 @@ import iopaint; print('iopaint: OK')
 ### 基本用法
 
 ```bash
-# 使用配置文件
+# 最常用指令: 打开单独保存mask+强制输出尺寸448x448+使用最高规格的DINO+SAM2模型
+python main.py --image photo.jpg --resize-output --save-individual-masks --sam-model sam2_hiera_large --dino-model grounding-dino-base
+
+# 使用特定配置文件
 python main.py --image photo.jpg --config configs/items.yml
 
 # 指定输出目录
-python main.py --image photo.jpg --config configs/items.yml --output-dir outputs/demo_run
+python main.py --image photo.jpg --output-dir outputs/demo_run
 
 # 使用命令行指定 prompts（覆盖配置文件）
 python main.py --image photo.jpg --prompts "cup" "knife" "robot arm"
