@@ -138,6 +138,18 @@ SAM Models:
         ),
     )
     parser.add_argument(
+        "--save-individual-transparent-masks",
+        nargs="?",
+        const=0,
+        default=None,
+        type=int,
+        choices=[0, 1],
+        help=(
+            "Save object RGBA cutouts to a separate 'masks_transparent' folder. "
+            "Optionally set to 1 to also save robot arm / gripper cutouts."
+        ),
+    )
+    parser.add_argument(
         "--resize-output",
         nargs="?",
         const="448x448",
@@ -200,6 +212,11 @@ def main():
     if args.save_individual_masks is not None:
         config.save_individual_masks = True
         config.save_individual_masks_include_robot_gripper = bool(args.save_individual_masks)
+    if args.save_individual_transparent_masks is not None:
+        config.save_individual_transparent_masks = True
+        config.save_individual_transparent_masks_include_robot_gripper = bool(
+            args.save_individual_transparent_masks
+        )
     if args.resize_output is not None:
         try:
             config.output_size = parse_output_size(args.resize_output)
@@ -237,6 +254,12 @@ def main():
         print(
             "  Include Robot/Gripper Masks: "
             f"{config.save_individual_masks_include_robot_gripper}"
+        )
+    print(f"  Save Transparent Cutouts: {config.save_individual_transparent_masks}")
+    if config.save_individual_transparent_masks:
+        print(
+            "  Include Robot/Gripper Cutouts: "
+            f"{config.save_individual_transparent_masks_include_robot_gripper}"
         )
     if config.output_size:
         print(f"  Output Resize: {config.output_size[0]}x{config.output_size[1]}")

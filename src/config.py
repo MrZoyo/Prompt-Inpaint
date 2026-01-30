@@ -41,6 +41,8 @@ class SegmentConfig:
     # Output options
     save_individual_masks: bool = False  # Save all RGB masks to a separate folder
     save_individual_masks_include_robot_gripper: bool = False  # Include robot arm / gripper masks
+    save_individual_transparent_masks: bool = False  # Save RGBA cutouts to a separate folder
+    save_individual_transparent_masks_include_robot_gripper: bool = False  # Include robot arm / gripper cutouts
 
     # Device
     device: str = "cuda"
@@ -71,6 +73,12 @@ class SegmentConfig:
             save_individual_masks_include_robot_gripper=settings.get(
                 "save_individual_masks_include_robot_gripper", False
             ),
+            save_individual_transparent_masks=settings.get(
+                "save_individual_transparent_masks", False
+            ),
+            save_individual_transparent_masks_include_robot_gripper=settings.get(
+                "save_individual_transparent_masks_include_robot_gripper", False
+            ),
             device=settings.get("device", "cuda"),
         )
 
@@ -91,6 +99,10 @@ class SegmentConfig:
                 "save_individual_masks": self.save_individual_masks,
                 "save_individual_masks_include_robot_gripper": (
                     self.save_individual_masks_include_robot_gripper
+                ),
+                "save_individual_transparent_masks": self.save_individual_transparent_masks,
+                "save_individual_transparent_masks_include_robot_gripper": (
+                    self.save_individual_transparent_masks_include_robot_gripper
                 ),
                 "device": self.device,
             },

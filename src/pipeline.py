@@ -17,6 +17,7 @@ from .mask_processor import (
     combine_all_masks,
     deduplicate_objects,
     dilate_mask,
+    extract_object_crop,
     mask_to_image,
     mask_to_rgb,
 )
@@ -294,6 +295,41 @@ class SegmentInpaintPipeline:
 
             print(f"  Saved {saved_count} RGB masks to: {masks_dir}")
 
+        # Step 4.6: Save individual transparent cutouts to a separate folder (if enabled)
+        transparent_masks_dir = None
+        if self.config.save_individual_transparent_masks and objects:
+            print("Saving individual transparent cutouts...")
+            transparent_masks_dir = output_path / "masks_transparent"
+            transparent_masks_dir.mkdir(exist_ok=True)
+
+            skip_labels = {"robot arm", "gripper"}
+            include_robot_gripper = (
+                self.config.save_individual_transparent_masks_include_robot_gripper
+            )
+
+            name_counts = {}
+            saved_count = 0
+            for obj in objects:
+                if not include_robot_gripper:
+                    primary_label = obj.labels[0].strip().lower() if obj.labels else ""
+                    if primary_label in skip_labels:
+                        continue
+
+                base_name = obj.labels[0].replace(" ", "_").replace("/", "-")
+
+                if base_name in name_counts:
+                    name_counts[base_name] += 1
+                    filename = f"{base_name}_{name_counts[base_name]}.png"
+                else:
+                    name_counts[base_name] = 0
+                    filename = f"{base_name}.png"
+
+                rgba_cutout = extract_object_crop(image_np, obj.mask)
+                self._save_image(rgba_cutout, transparent_masks_dir / filename)
+                saved_count += 1
+
+            print(f"  Saved {saved_count} transparent cutouts to: {transparent_masks_dir}")
+
         # Step 5: Combine masks (original precise masks for reference)
         combined_mask = combine_all_masks(objects)
         combined_path = output_path / "combined_mask.png"
@@ -533,6 +569,7 @@ class SegmentInpaintPipeline:
             "num_objects": len(objects),
             "objects_dir": str(objects_dir),
             "masks_dir": str(masks_dir) if masks_dir else None,
+            "masks_transparent_dir": str(transparent_masks_dir) if transparent_masks_dir else None,
             "objects": [
                 {
                     "id": obj.id,
@@ -555,6 +592,15 @@ class SegmentInpaintPipeline:
                 "inpaint_backend": self.config.inpaint_backend,
                 "save_debug": self.config.save_debug,
                 "save_individual_masks": self.config.save_individual_masks,
+                "save_individual_masks_include_robot_gripper": (
+                    self.config.save_individual_masks_include_robot_gripper
+                ),
+                "save_individual_transparent_masks": (
+                    self.config.save_individual_transparent_masks
+                ),
+                "save_individual_transparent_masks_include_robot_gripper": (
+                    self.config.save_individual_transparent_masks_include_robot_gripper
+                ),
             },
         }
         with open(output_path / "report.json", "w") as f:
