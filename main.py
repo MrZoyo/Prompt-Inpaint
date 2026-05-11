@@ -2,11 +2,10 @@
 """
 Grounded Segment Inpaint - CLI Entry Point
 
-Detect objects using text prompts, segment with SAM, and inpaint background.
+Detect, segment, and inpaint objects using SAM3 (Segment Anything 3).
 """
 
 import argparse
-import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +16,7 @@ from src.pipeline import SegmentInpaintPipeline
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Detect, segment, and inpaint objects in images using Grounding DINO + SAM.",
+        description="Detect, segment, and inpaint objects in images using SAM3.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -27,15 +26,11 @@ Examples:
   # Quick test with inline prompts
   python main.py --image photo.jpg --prompts "cup" "keyboard" "book"
 
-  # Use SAM1 instead of SAM2
-  python main.py --image photo.jpg --prompts "cup" --sam-model vit_h
-
   # Skip inpainting
   python main.py --image photo.jpg --config configs/items.yml --no-inpaint
 
-SAM Models:
-  SAM2: sam2_hiera_tiny, sam2_hiera_small, sam2_hiera_base_plus, sam2_hiera_large
-  SAM1: vit_b, vit_l, vit_h
+Note: SAM3 (facebook/sam3) is a gated HuggingFace model. Run
+`huggingface-cli login` once after requesting access.
         """,
     )
 
@@ -66,15 +61,9 @@ SAM Models:
 
     # Model selection
     parser.add_argument(
-        "--sam-model",
+        "--sam3-model",
         default=None,
-        help="SAM model to use (default: sam2_hiera_small)",
-    )
-    parser.add_argument(
-        "--dino-model",
-        default=None,
-        choices=["grounding-dino-tiny", "grounding-dino-base"],
-        help="Grounding DINO model (default: grounding-dino-tiny)",
+        help="SAM3 model id or local path (default: facebook/sam3)",
     )
     parser.add_argument(
         "--device",
@@ -84,16 +73,16 @@ SAM Models:
 
     # Detection thresholds
     parser.add_argument(
-        "--box-threshold",
+        "--sam3-threshold",
         type=float,
         default=None,
-        help="Grounding DINO box confidence threshold (default: 0.25)",
+        help="SAM3 detection confidence threshold (default: 0.5)",
     )
     parser.add_argument(
-        "--text-threshold",
+        "--sam3-mask-threshold",
         type=float,
         default=None,
-        help="Grounding DINO text confidence threshold (default: 0.25)",
+        help="SAM3 mask binarization threshold (default: 0.5)",
     )
     parser.add_argument(
         "--iou-threshold",
@@ -163,13 +152,11 @@ SAM Models:
 def main():
     args = parse_args()
 
-    # Validate input
     image_path = Path(args.image)
     if not image_path.exists():
         print(f"Error: Image not found: {image_path}")
         sys.exit(1)
 
-    # Load config (default: configs/items.yml)
     if args.config:
         config_path = Path(args.config)
     else:
@@ -180,25 +167,21 @@ def main():
         print(f"Loaded config from: {config_path}")
     else:
         if args.config:
-            # User specified a config file but it doesn't exist
             print(f"Error: Config file not found: {config_path}")
             sys.exit(1)
-        # Default config file not found, use defaults (prompts must be provided via CLI)
         config = SegmentConfig()
 
     # Override config with CLI arguments
     if args.prompts:
         config.prompts = args.prompts
-    if args.sam_model is not None:
-        config.sam_model = args.sam_model
-    if args.dino_model is not None:
-        config.grounding_dino_model = args.dino_model
+    if args.sam3_model is not None:
+        config.sam3_model = args.sam3_model
     if args.device is not None:
         config.device = args.device
-    if args.box_threshold is not None:
-        config.box_threshold = args.box_threshold
-    if args.text_threshold is not None:
-        config.text_threshold = args.text_threshold
+    if args.sam3_threshold is not None:
+        config.sam3_threshold = args.sam3_threshold
+    if args.sam3_mask_threshold is not None:
+        config.sam3_mask_threshold = args.sam3_mask_threshold
     if args.iou_threshold is not None:
         config.iou_threshold = args.iou_threshold
     if args.mask_dilate_pixels is not None:
@@ -224,28 +207,24 @@ def main():
             print(f"Error: invalid --resize-output value '{args.resize_output}': {exc}")
             sys.exit(1)
 
-    # Validate prompts
     if not config.prompts:
         print("Error: No prompts provided. Use --prompts or --config.")
         sys.exit(1)
 
-    # Set output directory
     if args.output_dir:
         output_dir = args.output_dir
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = f"outputs/{timestamp}"
 
-    # Print config summary
     print("=" * 50)
     print("Configuration:")
     print(f"  Image: {image_path}")
     print(f"  Output: {output_dir}")
-    print(f"  DINO Model: {config.grounding_dino_model}")
-    print(f"  SAM Model: {config.sam_model}")
+    print(f"  SAM3 Model: {config.sam3_model}")
     print(f"  Prompts: {config.prompts}")
-    print(f"  Box Threshold: {config.box_threshold}")
-    print(f"  Text Threshold: {config.text_threshold}")
+    print(f"  SAM3 Threshold: {config.sam3_threshold}")
+    print(f"  SAM3 Mask Threshold: {config.sam3_mask_threshold}")
     print(f"  IoU Threshold: {config.iou_threshold}")
     print(f"  Inpaint: {config.inpaint_backend}")
     print(f"  Save Debug: {config.save_debug}")
@@ -265,14 +244,12 @@ def main():
         print(f"  Output Resize: {config.output_size[0]}x{config.output_size[1]}")
     print("=" * 50)
 
-    # Run pipeline
     pipeline = SegmentInpaintPipeline(config)
     report = pipeline.process(
         image_path=str(image_path),
         output_dir=output_dir,
     )
 
-    # Print summary
     print("\n" + "=" * 50)
     print("Summary:")
     print(f"  Detections: {report['num_detections']}")

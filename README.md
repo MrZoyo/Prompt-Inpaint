@@ -5,8 +5,7 @@ English README. Chinese version: [Chinese (CN)](README_CN.md)
 Automatically detect, segment, and remove objects from images using text prompts, then generate a clean background image.
 
 **Core features:**
-- Use **Grounding DINO** to detect objects from text prompts
-- Use **SAM/SAM2** to generate precise segmentation masks
+- Use **SAM 3** (Meta's Segment Anything 3) for one-shot text-prompted concept segmentation — detection and masks come from a single model
 - Use **iopaint (LaMa)** to remove objects and inpaint the background
 - Support **iterative mask expansion** to recover occluded parts of objects
 
@@ -39,53 +38,42 @@ uv venv --python 3.11 .venv
 source .venv/bin/activate
 
 # 2. Install PyTorch (match your CUDA version)
-# Recommended torch 2.9.x for better compatibility with custom CUDA extensions
-uv pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
+uv pip install "torch>=2.7" "torchvision>=0.22" --index-url https://download.pytorch.org/whl/cu128
 
-# 3. Install core dependencies
+# 3. Install SAM3 + remaining dependencies
 uv pip install --index-strategy unsafe-best-match \
-    "transformers>=4.36.0" \
+    "sam3 @ git+https://github.com/facebookresearch/sam3.git" \
+    einops huggingface_hub \
     "iopaint>=1.2.0" \
-    "numpy<2.0" \
-    "opencv-python>=4.8.0" \
-    "pyyaml>=6.0" \
-    "requests>=2.31.0" \
-    "tqdm>=4.66.0" \
-    "setuptools"
-
-# 4. Install SAM2
-uv pip install --index-strategy unsafe-best-match \
-    "git+https://github.com/facebookresearch/sam2.git"
-
-# 5. (Optional) Install SAM1
-uv pip install --index-strategy unsafe-best-match \
-    "git+https://github.com/facebookresearch/segment-anything.git"
+    "numpy<2.0" "opencv-python>=4.8.0" "pyyaml>=6.0" "requests>=2.31.0" "tqdm>=4.66.0" setuptools
 ```
 
 ### Install with pip
 
 ```bash
-pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
-pip install transformers iopaint numpy opencv-python pyyaml requests tqdm
-pip install git+https://github.com/facebookresearch/sam2.git
-pip install git+https://github.com/facebookresearch/segment-anything.git  # optional
+pip install "torch>=2.7" "torchvision>=0.22" --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
 ```
 
-Or use requirements.txt:
+### Authenticate with HuggingFace (required for SAM3 weights)
+
+`facebook/sam3` is a gated model. Request access on the
+[model page](https://huggingface.co/facebook/sam3) and then log in once:
 
 ```bash
-pip install -r requirements.txt
-pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
-pip install git+https://github.com/facebookresearch/sam2.git
+huggingface-cli login
 ```
+
+The first run downloads the SAM3 checkpoint (~3.4GB) and caches it under
+`~/.cache/huggingface/hub`. Pre-existing weights at
+`<repo>/checkpoints/sam3.pt` are used in priority.
 
 ### Verify installation
 
 ```bash
 python -c "
 import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')
-import transformers; print(f'Transformers: {transformers.__version__}')
-import sam2; print('SAM2: OK')
+from sam3.model_builder import build_sam3_image_model; print('SAM3: OK')
 import iopaint; print('iopaint: OK')
 "
 ```
@@ -95,8 +83,8 @@ import iopaint; print('iopaint: OK')
 ### Basic usage
 
 ```bash
-# Common usage: save individual masks + force output size 448x448 + use high-capacity models
-python main.py --image photo.jpg --resize-output --save-individual-masks --sam-model sam2_hiera_large --dino-model grounding-dino-base
+# Common usage: save individual masks + force output size 448x448
+python main.py --image photo.jpg --resize-output --save-individual-masks --config configs/items.yml
 
 # Save transparent cutouts (RGBA, cropped to object size)
 python main.py --image photo.jpg --save-individual-transparent-masks --no-inpaint
@@ -154,11 +142,10 @@ Separated objects (RGB masks):
 | `--output-dir`, `-o` | str | `outputs/<timestamp>` | Output directory |
 | `--config`, `-c` | str | `configs/items.yml` | YAML config path |
 | `--prompts`, `-p` | list | - | Prompt list (overrides config) |
-| `--dino-model` | str | `grounding-dino-tiny` | Grounding DINO model |
-| `--sam-model` | str | `sam2_hiera_small` | SAM model |
+| `--sam3-model` | str | `facebook/sam3` | SAM3 model id or local checkpoint path |
 | `--device` | str | `cuda` | Device |
-| `--box-threshold` | float | `0.25` | DINO box confidence threshold |
-| `--text-threshold` | float | `0.25` | Text match threshold |
+| `--sam3-threshold` | float | `0.5` | SAM3 detection confidence threshold |
+| `--sam3-mask-threshold` | float | `0.5` | SAM3 mask binarization threshold |
 | `--iou-threshold` | float | `0.5` | Mask dedup IoU threshold |
 | `--inpaint-backend` | str | `iopaint` | Inpaint backend: `iopaint`/`opencv`/`none` |
 | `--mask-dilate-pixels` | int | `12` | Mask dilation pixels (for inpaint) |
@@ -171,7 +158,7 @@ Separated objects (RGB masks):
 **Notes:**
 - CLI args override config values
 - If `--config` is not provided, it tries to load `configs/items.yml`; if missing, prompts must be passed via `--prompts`
-- Example: if `items.yml` sets `box_threshold: 0.30`, the effective value will be 0.30 (not 0.25)
+- Example: if `items.yml` sets `sam3_threshold: 0.6`, the effective value will be 0.6 (not 0.5)
 - `--save-individual-masks` and `--save-individual-transparent-masks` can be enabled together: each flag saves its own outputs; disable both to save neither
 
 ## Configuration
@@ -208,9 +195,14 @@ prompts:
   - "cloth"
 
 settings:
-  # Detection thresholds (higher = stricter)
-  box_threshold: 0.30
-  text_threshold: 0.30
+  # SAM3 model: HuggingFace id or local checkpoint path
+  sam3_model: facebook/sam3
+
+  # SAM3 detection confidence (higher = stricter)
+  sam3_threshold: 0.5
+
+  # SAM3 mask binarization threshold
+  sam3_mask_threshold: 0.5
 
   # Mask dedup threshold
   iou_threshold: 0.5
@@ -220,10 +212,6 @@ settings:
 
   # Contour overlap threshold
   contour_overlap_ratio: 0.3
-
-  # Model selection
-  sam_model: sam2_hiera_small          # or vit_h (SAM1)
-  grounding_dino_model: grounding-dino-tiny  # or grounding-dino-base
 
   # Inpainting
   inpaint_backend: iopaint             # iopaint / opencv / none
@@ -254,8 +242,8 @@ Notes:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 1: Initial Detection                                       │
-│  - Grounding DINO detects objects per prompt                     │
-│  - SAM generates masks per detection box                         │
+│  - SAM3 takes each text prompt and returns masks + boxes + scores│
+│    in a single forward pass per prompt (vision features cached)  │
 │  - Deduplicate by IoU (merge overlapping masks)                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -357,58 +345,46 @@ batch_outputs/
 
 ## Model Selection
 
-### Grounding DINO
+### SAM3
 
-| Model | Notes | Recommended |
-|------|------|----------|
-| `grounding-dino-tiny` | Faster, lower VRAM | Default |
-| `grounding-dino-base` | More accurate, slower | Harder scenes |
+Currently only one public checkpoint is published: `facebook/sam3` (~0.9B params, 3.4GB).
 
-**Offline/local models:** If `checkpoints/grounding-dino-tiny` or `checkpoints/grounding-dino-base` exist, they are loaded locally; otherwise downloaded from Hugging Face.
+**Offline/local checkpoint:** If `checkpoints/sam3.pt` exists, it is loaded locally;
+otherwise the file is downloaded from Hugging Face on first run (gated; see Installation).
 
-### SAM
+**VRAM reference (RTX 3090 24GB, RGB 448×448):**
+- SAM3 inference: ~6–10 GB
+- iopaint LaMa background inpainting: a few hundred MB
 
-| Model | Params | Notes |
-|------|--------|------|
-| `sam2_hiera_tiny` | - | Fastest |
-| `sam2_hiera_small` | - | Balanced (default) |
-| `sam2_hiera_base_plus` | - | More accurate |
-| `sam2_hiera_large` | - | Most accurate |
-| `vit_b` | 91M | SAM1, fast |
-| `vit_l` | 308M | SAM1, balanced |
-| `vit_h` | 636M | SAM1, best quality |
-
-**VRAM reference (RTX 3050 8GB):**
-- `grounding-dino-tiny` + `sam2_hiera_small`: ~6GB
-- `grounding-dino-base` + `sam2_hiera_large`: may OOM
+The model performs the equivalent of "Grounding DINO + SAM2" in a single forward pass —
+text prompts produce masks, boxes, and scores directly.
 
 ## FAQ
 
 ### 1. Objects are not fully removed
 
 **Possible causes:**
-- Thresholds too high; some regions not detected
+- SAM3 confidence threshold too high; some regions filtered
 - Occluded parts not recovered by iterative expansion
 
 **Fixes:**
-- Lower thresholds: `--box-threshold 0.2 --text-threshold 0.2`
-- Use larger models: `--dino-model grounding-dino-base`
-- Reorder prompts: put occluders first
+- Lower threshold: `--sam3-threshold 0.3`
+- Reorder prompts: put occluders first (so they get inpainted before nearby objects)
 - Use `--save-debug` to inspect intermediate results
 
 ### 2. False positives
 
 **Fixes:**
-- Increase thresholds: `--box-threshold 0.5 --text-threshold 0.5`
+- Increase threshold: `--sam3-threshold 0.7`
 - Use more specific prompts, e.g. "yellow knife" instead of "knife"
 - Reduce prompt list size
 
 ### 3. Out of memory (OOM)
 
 **Fixes:**
-- Use smaller models: `--sam-model sam2_hiera_tiny`
-- Use CPU: `--device cpu` (slow)
+- Use CPU: `--device cpu` (much slower)
 - Resize input images
+- Close other GPU processes
 
 ### 4. Inpaint quality is poor
 
@@ -418,19 +394,18 @@ batch_outputs/
 - Ensure sufficient dilation (default 12px)
 - For large areas, consider external retouching tools
 
-### 5. Error: MultiScaleDeformableAttention build failure / cannot open shared object file
+### 5. `Cannot access gated repo for facebook/sam3`
 
-**Cause:** PyTorch version too new for transformers custom CUDA extensions.
+**Cause:** You haven't been granted access on Hugging Face, or you aren't authenticated.
 
 **Fixes:**
-- Use torch 2.9.x + torchvision 0.24.x
-- Clear extension cache and retry: `rm -rf ~/.cache/torch_extensions/py311_cu128/MultiScaleDeformableAttention`
+1. Visit https://huggingface.co/facebook/sam3 and request access
+2. Run `huggingface-cli login` and paste a read token
 
 ## Acknowledgements
 
 This project uses:
-- [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) - open-vocabulary object detection
-- [SAM2](https://github.com/facebookresearch/sam2) - Segment Anything Model 2
+- [SAM 3](https://huggingface.co/facebook/sam3) - Meta's Segment Anything Model 3
 - [iopaint](https://github.com/Sanster/IOPaint) - image inpainting
 
 ## License

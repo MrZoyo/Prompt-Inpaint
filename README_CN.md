@@ -3,10 +3,9 @@
 基于文本提示自动检测、分割并移除图像中的物体，生成干净的背景图像。
 
 **核心功能：**
-- 使用 **Grounding DINO** 根据文本提示检测物体
-- 使用 **SAM/SAM2** 生成精确的分割 mask
+- 使用 **SAM 3**（Meta 的 Segment Anything 3)单步从文本 prompt 直接产出 mask + box + score,取代过去的 Grounding DINO + SAM2 两阶段流水线
 - 使用 **iopaint (LaMa)** 移除物体并补全背景
-- 支持 **迭代式 mask 扩展**：自动发现被遮挡物体的隐藏部分
+- 支持 **迭代式 mask 扩展**:自动发现被遮挡物体的隐藏部分
 
 ## 目录
 
@@ -27,7 +26,7 @@
 - CUDA 12.x（推荐）或 CPU
 - 约 8GB 显存（使用默认模型）
 
-### 使用 uv 安装（推荐）
+### 使用 uv 安装(推荐)
 
 ```bash
 cd /path/to/grounded-segment-inpaint
@@ -36,54 +35,42 @@ cd /path/to/grounded-segment-inpaint
 uv venv --python 3.11 .venv
 source .venv/bin/activate
 
-# 2. 安装 PyTorch（根据你的 CUDA 版本调整）
-# 建议使用 torch 2.9.x（与当前 transformers 的自定义 CUDA 扩展兼容性更好）
-uv pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
+# 2. 安装 PyTorch(根据你的 CUDA 版本调整)
+uv pip install "torch>=2.7" "torchvision>=0.22" --index-url https://download.pytorch.org/whl/cu128
 
-# 3. 安装主要依赖
+# 3. 安装 SAM3 + 其它依赖
 uv pip install --index-strategy unsafe-best-match \
-    "transformers>=4.36.0" \
+    "sam3 @ git+https://github.com/facebookresearch/sam3.git" \
+    einops huggingface_hub \
     "iopaint>=1.2.0" \
-    "numpy<2.0" \
-    "opencv-python>=4.8.0" \
-    "pyyaml>=6.0" \
-    "requests>=2.31.0" \
-    "tqdm>=4.66.0" \
-    "setuptools"
-
-# 4. 安装 SAM2
-uv pip install --index-strategy unsafe-best-match \
-    "git+https://github.com/facebookresearch/sam2.git"
-
-# 5. （可选）安装 SAM1 作为备选
-uv pip install --index-strategy unsafe-best-match \
-    "git+https://github.com/facebookresearch/segment-anything.git"
+    "numpy<2.0" "opencv-python>=4.8.0" "pyyaml>=6.0" "requests>=2.31.0" "tqdm>=4.66.0" setuptools
 ```
 
 ### 使用 pip 安装
 
 ```bash
-pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
-pip install transformers iopaint numpy opencv-python pyyaml requests tqdm
-pip install git+https://github.com/facebookresearch/sam2.git
-pip install git+https://github.com/facebookresearch/segment-anything.git  # 可选
+pip install "torch>=2.7" "torchvision>=0.22" --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
 ```
 
-或者使用 requirements.txt：
+### 申请 HuggingFace 权限并登录(下载 SAM3 权重必需)
+
+`facebook/sam3` 是 gated 模型,需要先在
+[模型页面](https://huggingface.co/facebook/sam3) 申请访问权,然后本地登录一次:
 
 ```bash
-pip install -r requirements.txt
-pip install "torch==2.9.*" "torchvision==0.24.*" --index-url https://download.pytorch.org/whl/cu128
-pip install git+https://github.com/facebookresearch/sam2.git
+huggingface-cli login
 ```
+
+首次运行会下载 SAM3 权重(~3.4GB)并缓存到 `~/.cache/huggingface/hub`。
+若 `<repo>/checkpoints/sam3.pt` 已存在则优先使用本地文件。
 
 ### 验证安装
 
 ```bash
 python -c "
 import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')
-import transformers; print(f'Transformers: {transformers.__version__}')
-import sam2; print('SAM2: OK')
+from sam3.model_builder import build_sam3_image_model; print('SAM3: OK')
 import iopaint; print('iopaint: OK')
 "
 ```
@@ -93,8 +80,8 @@ import iopaint; print('iopaint: OK')
 ### 基本用法
 
 ```bash
-# 最常用指令: 打开单独保存mask+强制输出尺寸448x448+使用最高规格的DINO+SAM2模型
-python main.py --image photo.jpg --resize-output --save-individual-masks --sam-model sam2_hiera_large --dino-model grounding-dino-base
+# 最常用指令: 打开单独保存mask + 强制输出尺寸448x448
+python main.py --image photo.jpg --resize-output --save-individual-masks --config configs/items.yml
 
 # 保存透明抠图（RGBA，裁剪到物体大小）
 python main.py --image photo.jpg --save-individual-transparent-masks --no-inpaint
@@ -151,12 +138,11 @@ python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 | `--image`, `-i` | str | **必填** | 输入图片路径 |
 | `--output-dir`, `-o` | str | `outputs/<timestamp>` | 输出目录 |
 | `--config`, `-c` | str | `configs/items.yml` | YAML 配置文件路径 |
-| `--prompts`, `-p` | list | - | 检测提示词列表（覆盖配置文件） |
-| `--dino-model` | str | `grounding-dino-tiny` | Grounding DINO 模型 |
-| `--sam-model` | str | `sam2_hiera_small` | SAM 模型 |
+| `--prompts`, `-p` | list | - | 检测提示词列表(覆盖配置文件) |
+| `--sam3-model` | str | `facebook/sam3` | SAM3 模型 id 或本地 checkpoint 路径 |
 | `--device` | str | `cuda` | 运行设备 |
-| `--box-threshold` | float | `0.25` | 检测框置信度阈值 |
-| `--text-threshold` | float | `0.25` | 文本匹配阈值 |
+| `--sam3-threshold` | float | `0.5` | SAM3 检测置信度阈值 |
+| `--sam3-mask-threshold` | float | `0.5` | SAM3 mask 二值化阈值 |
 | `--iou-threshold` | float | `0.5` | Mask 去重 IoU 阈值 |
 | `--inpaint-backend` | str | `iopaint` | 补全后端: `iopaint`/`opencv`/`none` |
 | `--mask-dilate-pixels` | int | `12` | Mask 膨胀像素数（用于补全） |
@@ -169,7 +155,7 @@ python main.py --image photo.jpg --prompts "cup" --resize-output 640x480
 **注意：**
 - CLI 参数会覆盖配置文件中的对应设置
 - 未指定 `--config` 时会尝试加载默认配置 `configs/items.yml`；若不存在则使用代码内置默认值
-- 例如：`items.yml` 使用 `box_threshold: 0.30`，所以如果加载该配置文件，实际阈值会是 0.30 而非 0.25
+- 例如:`items.yml` 设置 `sam3_threshold: 0.6`,所以如果加载该配置文件,实际阈值是 0.6 而非默认 0.5
 - `--save-individual-masks` 和 `--save-individual-transparent-masks` 可同时开启：开哪个就保存哪个，都开则同时保存，都不开发则不保存
 
 ## 配置文件
@@ -206,22 +192,23 @@ prompts:
   - "cloth"
 
 settings:
-  # 检测阈值（越高越严格，减少误检）
-  box_threshold: 0.30
-  text_threshold: 0.30
+  # SAM3 模型:HuggingFace id 或本地 checkpoint 路径
+  sam3_model: facebook/sam3
+
+  # SAM3 检测置信度(越高越严格,减少误检)
+  sam3_threshold: 0.5
+
+  # SAM3 mask 二值化阈值
+  sam3_mask_threshold: 0.5
 
   # Mask 去重阈值
   iou_threshold: 0.5
 
-  # 小 mask 包含合并阈值（覆盖比例）
+  # 小 mask 包含合并阈值(覆盖比例)
   containment_overlap_ratio: 0.9
 
-  # 轮廓重合阈值（用于区分错误拆分）
+  # 轮廓重合阈值(用于区分错误拆分)
   contour_overlap_ratio: 0.3
-
-  # 模型选择
-  sam_model: sam2_hiera_small          # 或 vit_h (SAM1)
-  grounding_dino_model: grounding-dino-tiny  # 或 grounding-dino-base
 
   # 背景补全
   inpaint_backend: iopaint             # iopaint / opencv / none
@@ -253,9 +240,9 @@ settings:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 1: 初始检测                                                 │
-│  - Grounding DINO 根据每个 prompt 检测物体                         │
-│  - SAM 为每个检测框生成精确 mask                                    │
-│  - 根据 IoU 去重（合并重叠的 mask）                                 │
+│  - SAM3 接收每个文本 prompt,单步返回 mask + box + score            │
+│    (vision features 在同一张图上跨 prompt 复用)                    │
+│  - 根据 IoU 去重(合并重叠的 mask)                                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -356,80 +343,65 @@ batch_outputs/
 
 ## 模型选择
 
-### Grounding DINO
+### SAM3
 
-| 模型 | 说明 | 推荐场景 |
-|------|------|----------|
-| `grounding-dino-tiny` | 更快，显存占用少 | 默认选择 |
-| `grounding-dino-base` | 更准确，但更慢 | 复杂场景或检测效果不佳时 |
+目前只发布了一个公开 checkpoint:`facebook/sam3`(约 0.9B 参数,3.4GB)。
 
-**离线/本地模型：** 如果存在 `checkpoints/grounding-dino-tiny` 或 `checkpoints/grounding-dino-base` 目录，会优先从本地加载；否则会尝试从 Hugging Face 下载。
+**离线/本地模型:** 如果存在 `checkpoints/sam3.pt`,会优先从本地加载;否则首次运行从 Hugging Face 下载(gated,见安装说明)。
 
-### SAM
+**显存参考(RTX 3090 24GB,RGB 448×448):**
+- SAM3 推理:约 6–10 GB
+- iopaint LaMa 背景补全:几百 MB
 
-| 模型 | 参数量 | 说明 |
-|------|--------|------|
-| `sam2_hiera_tiny` | - | 最快 |
-| `sam2_hiera_small` | - | 平衡（默认） |
-| `sam2_hiera_base_plus` | - | 更准确 |
-| `sam2_hiera_large` | - | 最准确 |
-| `vit_b` | 91M | SAM1，快速 |
-| `vit_l` | 308M | SAM1，平衡 |
-| `vit_h` | 636M | SAM1，高精度 |
-
-**显存参考（RTX 3050 8GB）：**
-- `grounding-dino-tiny` + `sam2_hiera_small`：约 6GB
-- `grounding-dino-base` + `sam2_hiera_large`：可能 OOM
+模型在单次前向传播中完成"Grounding DINO + SAM2"两阶段流程的等效任务 —— text prompt 直接产出 masks、boxes、scores。
 
 ## 常见问题
 
-### 1. 物体没有被完全移除，有残留
+### 1. 物体没有被完全移除,有残留
 
-**可能原因：**
-- 检测阈值过高，部分区域未被检测到
+**可能原因:**
+- SAM3 置信度阈值过高,部分区域被过滤
 - 被遮挡的部分未能通过迭代扩展发现
 
-**解决方案：**
-- 降低阈值：`--box-threshold 0.2 --text-threshold 0.2`
-- 使用更大的模型：`--dino-model grounding-dino-base`
-- 调整 prompt 顺序：将遮挡物放前面
+**解决方案:**
+- 降低阈值:`--sam3-threshold 0.3`
+- 调整 prompt 顺序:将遮挡物放前面(它会先被 inpaint 掉)
 - 使用 `--save-debug` 检查中间结果
 
 ### 2. 误检测了不想要的物体
 
-**解决方案：**
-- 提高阈值：`--box-threshold 0.5 --text-threshold 0.5`
-- 使用更精确的 prompt：`"yellow knife"` 而不是 `"knife"`
+**解决方案:**
+- 提高阈值:`--sam3-threshold 0.7`
+- 使用更精确的 prompt:`"yellow knife"` 而不是 `"knife"`
 - 减少 prompt 数量
 
 ### 3. 显存不足 (OOM)
 
-**解决方案：**
-- 使用更小的模型：`--sam-model sam2_hiera_tiny`
-- 使用 CPU：`--device cpu`（会很慢）
+**解决方案:**
+- 使用 CPU:`--device cpu`(会非常慢)
 - 缩小输入图像尺寸
+- 关闭其它占显存的进程
 
 ### 4. 补全效果不理想
 
-**说明：** iopaint (LaMa) 在复杂纹理或大面积补全时可能效果有限。
+**说明:** iopaint (LaMa) 在复杂纹理或大面积补全时可能效果有限。
 
-**建议：**
-- 确保 mask 膨胀足够（默认 12px）
-- 对于大面积物体，考虑使用其他专业修图工具
+**建议:**
+- 确保 mask 膨胀足够(默认 12px)
+- 对于大面积物体,考虑使用其他专业修图工具
 
-### 5. 报错：MultiScaleDeformableAttention 编译失败 / cannot open shared object file
+### 5. 报错:`Cannot access gated repo for facebook/sam3`
 
-**可能原因：** PyTorch 版本过新导致 transformers 的自定义 CUDA 扩展编译失败。
+**可能原因:** 没有获得 Hugging Face 访问权限,或者本地未登录。
 
-**解决方案：**
-- 使用 torch 2.9.x + torchvision 0.24.x（与当前依赖兼容性更好）
-- 清理扩展缓存后重试：`rm -rf ~/.cache/torch_extensions/py311_cu128/MultiScaleDeformableAttention`
+**解决方案:**
+1. 访问 https://huggingface.co/facebook/sam3 并申请 access
+2. 运行 `huggingface-cli login` 并粘贴 read token
 
 ## 致谢
 
-本项目使用了以下开源项目：
-- [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) - 开放词汇目标检测
-- [SAM2](https://github.com/facebookresearch/sam2) - Segment Anything Model 2
+本项目使用了以下开源项目:
+- [SAM 3](https://huggingface.co/facebook/sam3) - Meta 的 Segment Anything 3
 - [iopaint](https://github.com/Sanster/IOPaint) - 图像修复工具
 
 ## License

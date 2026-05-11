@@ -1,15 +1,13 @@
 # Core dependencies
-torch>=2.0
-torchvision>=0.15
+torch>=2.7
+torchvision>=0.22
 
-# Grounding DINO (via HuggingFace - easiest installation)
-transformers>=4.48.0
+# SAM3 (Meta official package; requires gated access to facebook/sam3 on HF)
+sam3 @ git+https://github.com/facebookresearch/sam3.git
 
-# SAM2 - install from source:
-# pip install git+https://github.com/facebookresearch/sam2.git
-
-# SAM1 (fallback) - install from source:
-# pip install git+https://github.com/facebookresearch/segment-anything.git
+# Required by sam3 / huggingface_hub for checkpoint download
+huggingface_hub
+einops
 
 # Inpainting
 iopaint>=1.2.0

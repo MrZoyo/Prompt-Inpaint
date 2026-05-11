@@ -171,8 +171,7 @@ Examples:
       --input-root /home/discover/sam3d_gs/raw_data \\
       --output-dir /home/discover/sam3d_gs/data \\
       --max-per-scene 5 \\
-      --sam-model sam2_hiera_large \\
-      --dino-model grounding-dino-base
+      --sam3-model facebook/sam3
 
 Notes:
   - Any extra args not recognized by this script are forwarded to main.py,
@@ -219,27 +218,21 @@ Notes:
         help="Text prompts for object detection (override config)",
     )
     parser.add_argument(
-        "--sam-model",
+        "--sam3-model",
         default=None,
-        help="SAM model to use (default: sam2_hiera_small)",
+        help="SAM3 model id or local path (default: facebook/sam3)",
     )
     parser.add_argument(
-        "--dino-model",
-        default=None,
-        choices=["grounding-dino-tiny", "grounding-dino-base"],
-        help="Grounding DINO model (default: grounding-dino-tiny)",
-    )
-    parser.add_argument(
-        "--box-threshold",
+        "--sam3-threshold",
         type=float,
         default=None,
-        help="Grounding DINO box confidence threshold (default: 0.25)",
+        help="SAM3 detection confidence threshold (default: 0.5)",
     )
     parser.add_argument(
-        "--text-threshold",
+        "--sam3-mask-threshold",
         type=float,
         default=None,
-        help="Grounding DINO text confidence threshold (default: 0.25)",
+        help="SAM3 mask binarization threshold (default: 0.5)",
     )
     parser.add_argument(
         "--iou-threshold",
@@ -382,16 +375,14 @@ def _load_config(args: argparse.Namespace) -> SegmentConfig:
 
     if args.prompts:
         config.prompts = args.prompts
-    if args.sam_model is not None:
-        config.sam_model = args.sam_model
-    if args.dino_model is not None:
-        config.grounding_dino_model = args.dino_model
+    if args.sam3_model is not None:
+        config.sam3_model = args.sam3_model
     if args.device is not None:
         config.device = args.device
-    if args.box_threshold is not None:
-        config.box_threshold = args.box_threshold
-    if args.text_threshold is not None:
-        config.text_threshold = args.text_threshold
+    if args.sam3_threshold is not None:
+        config.sam3_threshold = args.sam3_threshold
+    if args.sam3_mask_threshold is not None:
+        config.sam3_mask_threshold = args.sam3_mask_threshold
     if args.iou_threshold is not None:
         config.iou_threshold = args.iou_threshold
     if args.mask_dilate_pixels is not None:

@@ -34,22 +34,21 @@ prompts:
 settings:
 
   # ----------------------------------------------------------
-  # 检测阈值 / Detection Thresholds
+  # SAM3 阈值 / SAM3 Thresholds
   # ----------------------------------------------------------
 
-  # 检测框置信度阈值 (0.0 - 1.0)
-  # Box confidence threshold
+  # 检测置信度阈值 (0.0 - 1.0)
+  # Detection confidence threshold
   # - 越高越严格，减少误检但可能漏检
   # - Higher = stricter, fewer false positives but may miss objects
-  # - 推荐范围: 0.2 - 0.5
-  box_threshold: 0.25
+  # - 推荐范围: 0.3 - 0.7
+  sam3_threshold: 0.5
 
-  # 文本匹配阈值 (0.0 - 1.0)
-  # Text matching threshold
-  # - 控制提示词与检测结果的匹配严格程度
-  # - Controls how strictly prompts match detections
-  # - 推荐范围: 0.2 - 0.5
-  text_threshold: 0.25
+  # Mask 二值化阈值 (0.0 - 1.0)
+  # Mask binarization threshold
+  # - 控制 mask 边缘的严格程度
+  # - Controls mask edge tightness
+  sam3_mask_threshold: 0.5
 
   # ----------------------------------------------------------
   # Mask 处理 / Mask Processing
@@ -87,23 +86,11 @@ settings:
   # 模型选择 / Model Selection
   # ----------------------------------------------------------
 
-  # Grounding DINO 模型
-  # - grounding-dino-tiny: 更快，显存占用少（默认）
-  # - grounding-dino-base: 更准确，但更慢
-  grounding_dino_model: grounding-dino-tiny
-
-  # SAM 模型
-  # SAM2 选项 (推荐):
-  # - sam2_hiera_tiny:      最快
-  # - sam2_hiera_small:     平衡（默认）
-  # - sam2_hiera_base_plus: 更准确
-  # - sam2_hiera_large:     最准确
-  #
-  # SAM1 选项 (备选):
-  # - vit_b: 快速 (91M 参数)
-  # - vit_l: 平衡 (308M 参数)
-  # - vit_h: 高精度 (636M 参数)
-  sam_model: sam2_hiera_small
+  # SAM3 模型 (HuggingFace model id 或本地路径)
+  # SAM3 model (HuggingFace model id or local path)
+  # - 默认 facebook/sam3 (需先在 HuggingFace 申请权限)
+  # - Default: facebook/sam3 (requires HuggingFace gated access)
+  sam3_model: facebook/sam3
 
   # ----------------------------------------------------------
   # 背景补全 / Background Inpainting

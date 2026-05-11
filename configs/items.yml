@@ -55,10 +55,16 @@ prompts:
   - "toy bricks"
 
 
+
 settings:
-  # Grounding DINO detection thresholds
-  box_threshold: 0.35
-  text_threshold: 0.35
+  # SAM3 model (HuggingFace model id or local path)
+  sam3_model: facebook/sam3
+
+  # SAM3 detection confidence threshold
+  sam3_threshold: 0.5
+
+  # SAM3 mask binarization threshold
+  sam3_mask_threshold: 0.5
 
   # Mask deduplication threshold
   # Objects with IoU above this value are considered the same object
@@ -68,11 +74,6 @@ settings:
   # If small mask overlap ratio > 0.9 and contour overlap > 0.3, merge them
   containment_overlap_ratio: 0.9
   contour_overlap_ratio: 0.3
-
-  # SAM model selection
-  # SAM2: sam2_hiera_tiny, sam2_hiera_small, sam2_hiera_base_plus, sam2_hiera_large
-  # SAM1: vit_b, vit_l, vit_h
-  sam_model: sam2_hiera_small
 
   # Inpainting backend: iopaint, opencv, none
   inpaint_backend: iopaint
